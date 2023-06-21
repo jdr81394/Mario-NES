@@ -22,6 +22,7 @@ LoopButtons:
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Routine to read controller state and store it inside "Buttons" in RAM
+;; THIS IS NOT COMPLETE YET
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 .proc HandleControllerInput
     CheckAButton:

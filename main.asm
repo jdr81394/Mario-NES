@@ -1,119 +1,75 @@
-.include "consts.inc"
-.include "header.inc"
-.include "reset.inc"
-.include "utils.inc"
-.include "actor.inc"
+.include "./headers/consts.inc"
+.include "./headers/header.inc"
+.include "./headers/reset.inc"
+.include "./headers/utils.inc"
+.include "./datatypes/actors.inc"
+.include "./datatypes/gameStates.inc"
 
 .segment "ZEROPAGE"
-Frame:      .res 1                  ; reserver 1 byte to store number of frames
-Clock60:    .res 1                  ; This will be our seconds  counter that will increment every 60 frames since this runs at 60 frames per second
-BgPtr:      .res 2                  ; reserve 2 bytes ( 16 bits ) to store a pointer to the background address
-                                    ; ( we store first the lo-byte and then after, the hi-byte) - little endian architecture. For example: $3F00 -> $00, $3F .. i think
+MenuItem:       .res 1       ; Keep track of the menu item that is selected
+
+Score:          .res 4       ; Score (1s, 10s, 100s, and 1000s digits in decimal)
+
+Collision:      .res 1       ; Flag if a collision happened or not
+
 Buttons:        .res 1       ; Pressed buttons (A|B|Sel|Start|Up|Dwn|Lft|Rgt)
 PrevButtons:    .res 1       ; Stores the previous buttons from the last frame
-DummyValue:     .res 1       ; Change a tile
+
+XPos:           .res 2       ; Player X 16-bit position (8.8 fixed-point): hi+lo/256px
+YPos:           .res 2       ; Player Y 16-bit position (8.8 fixed-point): hi+lo/256px
+
+XVel:           .res 2       ; Player X (signed) velocity (in pixels per 256 frames)
+YVel:           .res 2       ; Player Y (signed) velocity (in pixels per 256 frames)
+
+PrevSubmarine:  .res 1       ; Stores the seconds that the last submarine was added
+PrevAirplane:   .res 1       ; Stores the seconds that the last airplane was added
+
+Frame:          .res 1       ; Counts frames (0 to 255 and repeats)
+IsDrawComplete: .res 1       ; Flag to indicate when VBlank is done drawing
+Clock60:        .res 1       ; Counter that increments per second (60 frames)
+
+BgPtr:          .res 2       ; Pointer to background address - 16bits (lo,hi)
+SprPtr:         .res 2       ; Pointer to the sprite address - 16bits (lo,hi)
 BufPtr:         .res 2       ; Pointer to the buffer address - 16bits (lo,hi)
+PalPtr:         .res 2       ; Pointer to the palette address - 16bits (lo,hi)
 
+XScroll:        .res 1       ; Store the horizontal scroll position
+CurrNametable:  .res 1       ; Store the current starting nametable (0 or 1)
+Column:         .res 1       ; Stores the column (of tiles) we are in the level
+NewColAddr:     .res 2       ; The destination address of the new column in PPU
+SourceAddr:     .res 2       ; The source address in ROM of the new column tiles
 
-ParamType:      .res 1          ; Used as parameter to subroutine
-ParamX:          .res 1          ; Used as parameter to subroutine
-ParamY:          .res 1          ; Used as parameter to subroutine
+ParamType:      .res 1       ; Used as parameter to subroutine
+ParamXPos:      .res 1       ; Used as parameter to subroutine
+ParamYPos:      .res 1       ; Used as parameter to subroutine
+ParamTileNum:   .res 1       ; Used as parameter to subroutine
+ParamNumTiles:  .res 1       ; Used as parameter to subroutine
+ParamAttribs:   .res 1       ; Used as parameter to subroutine
+ParamRectX1:    .res 1       ; Used as parameter to subroutine
+ParamRectY1:    .res 1       ; Used as parameter to subroutine
+ParamRectX2:    .res 1       ; Used as parameter to subroutine
+ParamRectY2:    .res 1       ; Used as parameter to subroutine
+
+ParamLoByte:     .res 1       ; Used as parameter to subroutine
+ParamHiByte:     .res 1       ; Used as parameter to subroutine
+
+PrevOAMCount:   .res 1       ; Store the previous number of bytes that were sent to the OAM
+
+Seed:           .res 2       ; Initialize 16-bit seed to any value except 0
+
+CurrentGameState:      .res 1       ; Keep track of game state
 
 ActorsArray:    .res MAX_ACTORS * .sizeof(Actor)
-
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; PRG-ROM code located at $8000
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 .segment "CODE"
-
-
-
-
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Subroutine to add an actor to the array
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-.proc AddActorToArray
-    ldx #0              ; Use as loop counter
-    Loop:
-        cpx MAX_ACTORS  
-        ; If the counter is at the max size, break loop
-            beq EndLoop
-        ; Else
-            lda ActorsArray+Actor::Type,x         ; Get the Actor Array Type
-            cmp ActorType::NULL                   
-            ; If it is greater there is a value in the accumulator, the flag will be set. 
-            bcc conditionTwo
-                ; Store the param type in this index
-                lda ParamType   
-                sta ActorsArray+Actor::Type,x
-                ; Store the param X in this index
-                lda ParamX
-                sta ActorsArray+Actor::XPos,x
-
-                ; Store the param Y in this index
-                lda ParamY
-                sta ActorsArray+Actor::XPos,x
-                
-                ; Break the loop
-                jmp EndLoop
-
-            ; else
-            conditionTwo:
-                inx         ; Increment the counter
-                jmp Loop
-    EndLoop:
-    rts
-.endproc
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Subroutine to load all 32 color palette values from ROM
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-.proc LoadPalette
-    PPU_SETADDR $3F00
-    ldy #0                   ; Y = 0
-:
-    lda PaletteData,y        ; Lookup byte in ROM        The () syntax is to going to interpret this as a 16 bit address and then deference the address. The Y register is the only register that can use this syntax due to the way things are wired within the 6502 processor.
-    sta PPU_DATA             ; Set value to send to PPU_DATA
-    iny                      ; Y++
-    cpy #32                  ; Is Y equal to 32?
-    bne :-          ; Not yet, keep looping
-    rts                      ; Return from subroutine
-.endproc
-
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Subroutine to load all 255 tiles in the first nametable
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-.proc LoadBackground
-    lda #<BackgroundData      ; Fetch lo byte
-    sta BgPtr
-    lda #>BackgroundData      ; Fetch hi byte
-    sta BgPtr+1
-
-    PPU_SETADDR $2000
-    ldx #0
-    ldy #0                   ; Y = 0
-OuterLoop:
-InnerLoop:
-    lda (BgPtr),y        ;   ; Lookup byte in ROM        The () syntax is to going to interpret this as a 16 bit address and then deference the address. The Y register is the only register that can use this syntax due to the way things are wired within the 6502 processor.
-    sta PPU_DATA             ; Set value to send to PPU_DATA
-    iny                      ; Y++
-    cpy #0                 ; Is Y equal to 0, did it wrap around?
-    beq IncreaseHiByte                   ; Not yet, keep looping
-    jmp InnerLoop
-IncreaseHiByte:
-    inc BgPtr+1              ; add 1 to the pointer
-    inx                       ; See if not equal  
-    cpx #4                      ; increment it by 1 anyway
-    bne OuterLoop                  ; check the results of the if statement from previous x, if previous x = 3, jump from subroutine
-    rts                      ; Return from subroutine
-.endproc
-
-
-
+.include "./functions/actorFuncs.inc"
+.include "./functions/backgroundFuncs.inc"
+.include "./functions/controllerFuncs.inc"
+.include "./functions/updateRenderDrawFuncs.inc"
+.include "./functions/funcs.inc"
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Reset handler (called when the NES resets or powers on)
@@ -124,6 +80,14 @@ Reset:
 Main:
     ;; Load Color Palette!
     jsr LoadPalette          ; Jump to subroutine LoadPalette
+
+;; Load the Title Screen
+.proc TitleScreen
+    lda #<BackgroundData
+    sta ParamLoByte
+    lda #>BackgroundData
+    sta ParamHiByte
+    
     jsr LoadBackground       ; Jump to subroutine LoadBackground
 
 
@@ -133,36 +97,107 @@ Main:
         sta PPU_CTRL
         lda #%00011110           ; Enable sprites, enable background, no clipping on left side
         sta PPU_MASK
-
-    lda #0 
-    sta Buttons
-    sta PrevButtons
     
     PPURendering:
+        lda #0
         sta PPU_SCROLL           ; prevents background scroll. First strobe prevents scroll in x plane
         sta PPU_SCROLL           ; have to strobe it again because its also a latch circuit. first strobe prevents scroll in y plane 
 
-    CreateSprite0:               ; Push onto stack in order: Type, X, Y
-        lda #ActorType::SPRITE0  ; Type variable
-        sta ParamType                      ; Push type onto stack
+    SetGameState:
+        lda #GameState::TITLE
+        sta CurrentGameState
+        DrawMenuArrow:
+            lda #142                  ; Sprite Y position at $0200
+            sta $0200
+            lda #$74                 ; Sprite Tile # at $0201
+            sta $0201
+            lda #%00000001           ; Sprite attribs at $0202
+            sta $0202
+            lda #70                 ; Sprite X position at $0203
+            sta $0203
 
-        lda #0                   ; X variable
-        sta ParamX                     ; Push X onto stack
+        ClearButtonValues:
+            lda #0 
+            sta Buttons
+            sta PrevButtons
+            sta MenuItem
+    GameLoop:
+        ListenForController:
+            jsr ReadControllers
+        HandleControllerInput:
+            CheckAButton:
+                lda Buttons
+                and #BUTTON_A
+                beq CheckUpButton    ; If Buttons value and Button_A is equal that means it wasnt pressed..
+                    lda PrevButtons
+                    and #BUTTON_A
+                    beq CheckUpButton
+                        lda #GameState::WORLD1
+                        sta CurrentGameState
+                        jmp World1
+            CheckUpButton:
+                lda MenuItem
+                cmp #0          ; If menu item is already at 0, let's not listen to this because its at top
+                beq CheckDownButton
+                    ; Else, let's see if it was pressed
+                    lda Buttons
+                    and #BUTTON_UP      ; If it wasn't pressed, check down button
+                    beq CheckDownButton
+                        ; Check previous button to prevent crazy movements
+                        lda PrevButtons
+                        and #BUTTON_UP
+                        beq CheckDownButton
+                        ; If it was pressed, then let's move it up
+                            lda $0200               ; Get its y value that is located at $0200
+                            sec 
+                            sbc #17
+                            sta $0200               ; Add 10 and put it back
+                            lda #0
+                            sta MenuItem
+            CheckDownButton:
+                lda MenuItem
+                cmp #1      ; If menu item is already at 1, let's not listen to this because its at the bottom
+                beq EndHandleControllerInput    ; beq checks to see if acumulator and cmp value are equal by checking 0 flag
+                    ; lets see if it was pressed
+                    lda Buttons
+                    and #BUTTON_DOWN
+                    beq EndHandleControllerInput
+                        ; Check previous button to prevent crazy movements
+                        lda PrevButtons
+                        and #BUTTON_DOWN
+                        beq EndHandleControllerInput
+                         ; If it was pressed, then let's move it down
+                            lda $0200               ; Get its y value that is located at $0200
+                            clc 
+                            adc #17
+                            sta $0200               ; Add 10 and put it back 
+                            lda #1
+                            sta MenuItem
+        EndHandleControllerInput:
 
-        lda #27                  ; Y Variable
-        sta ParamY                      ; Push Y onto stack
-
-        jsr AddActorToArray        ; Push
+        jmp GameLoop
 
 
-GameLoop:
+
+.endproc
+
+.proc World1
+; GameLoop:    
+;     CreateSprite0:               ; Push onto stack in order: Type, X, Y
+;     lda #ActorType::SPRITE0  ; Type variable
+;     sta ParamType                      ; Push type onto stack
+
+;     lda #0                   ; X variable
+;     sta ParamXPos                     ; Push X onto stack
+
+;     lda #27                  ; Y Variable
+;     sta ParamYPos                      ; Push Y onto stack
+
+;     jsr AddNewActor        ; Push
 
 
-    
-
-
-    jmp GameLoop          ; Force an infinite execution loop
-
+;     jmp GameLoop          ; Force an infinite execution loop
+.endproc
 
 NMI:
     inc Frame

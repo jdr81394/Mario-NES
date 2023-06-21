@@ -18,9 +18,9 @@
 ;; Subroutine to load all 255 tiles in the first nametable
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 .proc LoadBackground
-    lda #<BackgroundData      ; Fetch lo byte
+    lda ParamLoByte      ; Fetch lo byte
     sta BgPtr
-    lda #>BackgroundData      ; Fetch hi byte
+    lda ParamHiByte      ; Fetch hi byte
     sta BgPtr+1
 
     PPU_SETADDR $2000
