@@ -84,3 +84,21 @@ EndRoutine:
     :
     rts
 .endproc
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Subroutine to clear out ALL the actors when certain conditions are met
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+.proc ClearActors
+  ldx #0        ; X will be the counter
+  Loop:
+    cpx #MAX_ACTORS     ; Compare it to the max number of actors
+    beq EndLoop         ; If x - max_actors = 0, that means it hit the max and the zero flag is set. Lets jump to the end of the loop
+      ; Else, clear out the current position
+      lda #ActorType::NULL             ; Load the null value
+      sta ActorsArray+Actor::Type,x   ; Put it into the type 
+      inx                             ; Increment the counter
+      jmp Loop                        ; Jump back to the top of the loop
+  EndLoop:
+  rts
+.endproc

@@ -1,8 +1,23 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Subroutine to load all 32 color palette values from ROM
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-.proc LoadPalette
+.proc LoadPaletteNameTable0
     PPU_SETADDR $3F00
+    ldy #0                   ; Y = 0
+:
+    lda PaletteData,y        ; Lookup byte in ROM        The () syntax is to going to interpret this as a 16 bit address and then deference the address. The Y register is the only register that can use this syntax due to the way things are wired within the 6502 processor.
+    sta PPU_DATA             ; Set value to send to PPU_DATA
+    iny                      ; Y++
+    cpy #32                  ; Is Y equal to 32?
+    bne :-          ; Not yet, keep looping
+    rts                      ; Return from subroutine
+.endproc
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Subroutine to load all 32 color palette values from ROM
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+.proc LoadPaletteNameTable1
+    PPU_SETADDR $3F20
     ldy #0                   ; Y = 0
 :
     lda PaletteData,y        ; Lookup byte in ROM        The () syntax is to going to interpret this as a 16 bit address and then deference the address. The Y register is the only register that can use this syntax due to the way things are wired within the 6502 processor.
@@ -17,7 +32,8 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Subroutine to load all 255 tiles in the first nametable
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-.proc LoadBackground
+;; 3 Parameters
+.proc LoadNameTable0
     lda ParamLoByte      ; Fetch lo byte
     sta BgPtr
     lda ParamHiByte      ; Fetch hi byte
@@ -44,18 +60,50 @@ IncreaseHiByte:
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Subroutine to load all 16 bytes for the first name table 
+;; Subroutine to load all 255 tiles in the second nametable
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-.proc LoadAttributes
+;; 3 Parameters
+.proc LoadNameTable1
+    lda ParamLoByte      ; Fetch lo byte
+    sta BgPtr
+    lda ParamHiByte      ; Fetch hi byte
+    sta BgPtr+1
+
+    PPU_SETADDR $2400
+    ldx #0
     ldy #0                   ; Y = 0
-:
-    lda AttributeData,y        ; Lookup byte in ROM
+OuterLoop:
+InnerLoop:
+    lda (BgPtr),y        ;   ; Lookup byte in ROM        The () syntax is to going to interpret this as a 16 bit address and then deference the address. The Y register is the only register that can use this syntax due to the way things are wired within the 6502 processor.
     sta PPU_DATA             ; Set value to send to PPU_DATA
     iny                      ; Y++
-    cpy #16                  ; Is Y equal to 255?
-    bne :-          ; Not yet, keep looping
+    cpy #0                 ; Is Y equal to 0, did it wrap around?
+    beq IncreaseHiByte                   ; Not yet, keep looping
+    jmp InnerLoop
+IncreaseHiByte:
+    inc BgPtr+1              ; add 1 to the pointer
+    inx                       ; See if not equal  
+    cpx #4                      ; increment it by 1 anyway
+    bne OuterLoop                  ; check the results of the if statement from previous x, if previous x = 3, jump from subroutine
     rts                      ; Return from subroutine
 .endproc
+
+
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Subroutine to load all 16 bytes for the first name table 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+; .proc LoadAttributes
+;     ldy #0                   ; Y = 0
+; :
+;     lda AttributeData,y        ; Lookup byte in ROM
+;     sta PPU_DATA             ; Set value to send to PPU_DATA
+;     iny                      ; Y++
+;     cpy #16                  ; Is Y equal to 255?
+;     bne :-          ; Not yet, keep looping
+;     rts                      ; Return from subroutine
+; .endproc
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Subroutine to handle changing background tiles through buffering
@@ -110,5 +158,5 @@ BackgroundCopy:
 
         jmp BufferLoop           ; Loop back until we finish the buffer (find an entry with Length=0)
 EndBackgroundCopy:
-
+    rts
 .endproc

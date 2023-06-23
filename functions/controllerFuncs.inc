@@ -3,8 +3,8 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 .proc ReadControllers
     lda Buttons
-    sta PrevButtons       ; Stores previously pressed buttons
-
+    sta PrevButtons
+    
     lda #1                   ; A = 1
     sta Buttons              ; Buttons = 1
     sta JOYPAD1              ; Set Latch=1 to begin 'Input'/collection mode
@@ -25,30 +25,78 @@ LoopButtons:
 ;; THIS IS NOT COMPLETE YET
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 .proc HandleControllerInput
-    CheckAButton:
-    lda Buttons
-    and #BUTTON_A
-    beq :+
+    ; CheckAButton:
+    ;     lda Buttons
+    ;     and #BUTTON_A
+    ;     beq EndAButton
+    ;         lda Buttons
+    ;         and #BUTTON_A
+    ;         cmp PrevButtons        ; Compare the current buttons and check if button A was previously pressed
+    ;         beq EndAButton                 ; If it was, we bypass the creation of a new missile
+    ;         ; lets do something....
+    ; EndAButton:
+    CheckLeftButton:
+        lda Buttons
+        and #BUTTON_LEFT
+        beq NotLeft
+            lda XPos
+            cmp #10
+            bcc NotLeft             ; if XPos is equal to 10, we want to branch it because it shouldn't be less than 0! 
+                lda XVel
+                beq :+
+                    bpl NotLeft                 ; Skip if velocity is positive
+                :
+                sec 
+                sbc #ACCEL                    ; Subtract the acceleration from the velocity
+                cmp #256-MAX_VEL              ; If velocity - acceleration is greater than 256 - max speed, carry will be set , else cleared But prevent it from going over the max. speed
+                bcs :+
+                    lda #256-MAX_VEL
+                :
+                sta XVel
+                jmp FinishCheckLeft
+
+            NotLeft:
+                lda XVel
+                bpl FinishCheckLeft
+                cmp #256-BRAKE
+                bcc :+
+                    lda #256-BRAKE
+                :
+                adc #BRAKE
+                sta XVel
+    FinishCheckLeft:
+    CheckRightButton:
       lda Buttons
-      and #BUTTON_A
-      cmp PrevButtons        ; Compare the current buttons and check if button A was previously pressed
-      beq :+                 ; If it was, we bypass the creation of a new missile
-        ; lets alter the value int he buffer
-        lda #1              ; length = 1
-        sta $7000
+      and #BUTTON_RIGHT
+      beq NotRight
+        lda XPos
+        cmp #200              ; if XPos is equal or greater, than move on because we do not want to go further than 140 pixels on screen
+        bcs MoveScreenRight   ; The carry will be set if the accumulator is greater, since a subtraction was never need to be made from the accumulator
+          lda XVel            ; If Velocity isn't greater than Max Velocity
+          clc                 ; Clear the carry
+          adc #ACCEL          ; Add the acceleration to the velocity
+          cmp #MAX_VEL        ; Compare to MAX VEL, if 
+          bcc :+              ; If the carry is cleared, that means the max vel is less than or equal to accumulator
+            ; If it is set, the accumulator is greater, and we don't want it to be greater than the max velocity, so lets set it
+            lda #MAX_VEL       
+          :
+          sta XVel            ; Lets put it into the XVel
 
-        lda #$20
-        sta $7001
-        
-        lda #$52
-        sta $7002
+          jmp FinishCheckRight
+        MoveScreenRight:
+        inc XScroll           ; If XPos is already greater than 140, just scroll right
+      
+      NotRight:
+        lda XVel
+        bmi FinishCheckRight     ; If Velocity is negative, meaning the entity is already going to the left, then just bypass this logic
+        cmp #BRAKE              ; If XVel is less than BRAKE then make it be the break
+        bcs :+
+          lda #BRAKE+1          ; Magic
+        :
+        ; sec                   is the carry already set from the previous instruction? I think so
+        sbc #BRAKE
+        sta XVel
+      FinishCheckRight:
 
-        lda #$1
-        clc 
-        adc $7003
-        sta $7003
-        lda #$20
-        sta $7004
-        
-    :
+    rts
 .endproc

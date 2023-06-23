@@ -6,19 +6,28 @@
 .include "./datatypes/gameStates.inc"
 
 .segment "ZEROPAGE"
+
+XPos:           .res 2       ; Player X 16-bit position (8.8 fixed-point): hi+lo/256px
+XVel:           .res 2       ; Player X (signed) velocity (in pixels per 256 frames)
+
+Buttons:        .res 1       ; Pressed buttons (A|B|Sel|Start|Up|Dwn|Lft|Rgt)
+PrevButtons:    .res 1       ; Stores the previous buttons from the last frame
+
+
+
+BufPtr:         .res 2       ; Pointer to the buffer address - 16bits (lo,hi)
+
 MenuItem:       .res 1       ; Keep track of the menu item that is selected
+
+PlayerOneLives: .res 1       ; Lives for Mario
 
 Score:          .res 4       ; Score (1s, 10s, 100s, and 1000s digits in decimal)
 
 Collision:      .res 1       ; Flag if a collision happened or not
 
-Buttons:        .res 1       ; Pressed buttons (A|B|Sel|Start|Up|Dwn|Lft|Rgt)
-PrevButtons:    .res 1       ; Stores the previous buttons from the last frame
 
-XPos:           .res 2       ; Player X 16-bit position (8.8 fixed-point): hi+lo/256px
 YPos:           .res 2       ; Player Y 16-bit position (8.8 fixed-point): hi+lo/256px
 
-XVel:           .res 2       ; Player X (signed) velocity (in pixels per 256 frames)
 YVel:           .res 2       ; Player Y (signed) velocity (in pixels per 256 frames)
 
 PrevSubmarine:  .res 1       ; Stores the seconds that the last submarine was added
@@ -27,10 +36,10 @@ PrevAirplane:   .res 1       ; Stores the seconds that the last airplane was add
 Frame:          .res 1       ; Counts frames (0 to 255 and repeats)
 IsDrawComplete: .res 1       ; Flag to indicate when VBlank is done drawing
 Clock60:        .res 1       ; Counter that increments per second (60 frames)
+WaitUntilVar:    .res 1       ; Use this to compare against the Clock60
 
 BgPtr:          .res 2       ; Pointer to background address - 16bits (lo,hi)
 SprPtr:         .res 2       ; Pointer to the sprite address - 16bits (lo,hi)
-BufPtr:         .res 2       ; Pointer to the buffer address - 16bits (lo,hi)
 PalPtr:         .res 2       ; Pointer to the palette address - 16bits (lo,hi)
 
 XScroll:        .res 1       ; Store the horizontal scroll position
@@ -52,6 +61,7 @@ ParamRectY2:    .res 1       ; Used as parameter to subroutine
 
 ParamLoByte:     .res 1       ; Used as parameter to subroutine
 ParamHiByte:     .res 1       ; Used as parameter to subroutine
+
 
 PrevOAMCount:   .res 1       ; Store the previous number of bytes that were sent to the OAM
 
@@ -79,18 +89,16 @@ Reset:
 
 Main:
     ;; Load Color Palette!
-    jsr LoadPalette          ; Jump to subroutine LoadPalette
+    jsr LoadPaletteNameTable0          ; Jump to subroutine LoadPalette
 
 ;; Load the Title Screen
 .proc TitleScreen
-    lda #<BackgroundData
+    lda #<TitleScreenData     ; Lo byte
     sta ParamLoByte
-    lda #>BackgroundData
+    lda #>TitleScreenData     ; Hi byte
     sta ParamHiByte
-    
-    jsr LoadBackground       ; Jump to subroutine LoadBackground
 
-
+    jsr LoadNameTable0       ; Jump to subroutine LoadBackground
 
     EnableNMI:
         lda #%10010000           ; Enable NMI & set background to use 2nd pattern table (at $1000)
@@ -118,8 +126,7 @@ Main:
 
         ClearButtonValues:
             lda #0 
-            sta Buttons
-            sta PrevButtons
+           
             sta MenuItem
     GameLoop:
         ListenForController:
@@ -132,8 +139,14 @@ Main:
                     lda PrevButtons
                     and #BUTTON_A
                     beq CheckUpButton
-                        lda #GameState::WORLD1
-                        sta CurrentGameState
+                        ; Clean up the arrow to select the stage
+                        lda #$FF
+                        sta $0200
+                        sta $0201
+                        sta $0202
+                        sta $0203
+                        lda #3
+                        sta PlayerOneLives
                         jmp World1
             CheckUpButton:
                 lda MenuItem
@@ -182,24 +195,251 @@ Main:
 .endproc
 
 .proc World1
-; GameLoop:    
-;     CreateSprite0:               ; Push onto stack in order: Type, X, Y
-;     lda #ActorType::SPRITE0  ; Type variable
-;     sta ParamType                      ; Push type onto stack
+    LoadBlankScreen:
 
-;     lda #0                   ; X variable
-;     sta ParamXPos                     ; Push X onto stack
+        lda #0
+        sta PPU_CTRL    ; freezes the vblank
+        sta PPU_MASK    ; doesn't show background
 
-;     lda #27                  ; Y Variable
-;     sta ParamYPos                      ; Push Y onto stack
+        lda #<BlankScreenData
+        sta ParamLoByte
+        lda #>BlankScreenData
+        sta ParamHiByte
 
-;     jsr AddNewActor        ; Push
+        jsr LoadNameTable1       ; Jump to subroutine LoadBackground
+
+        lda #%10010000           ; Enable NMI & set background to use 2nd pattern table (at $1000)
+        sta PPU_CTRL
+        lda #%00011110           ; Enable sprites, enable background, no clipping on left side
+        sta PPU_MASK
+    
+        lda #255
+        sta PPU_SCROLL
+        lda #0
+        sta PPU_SCROLL
+    
+
+    CreateMario:
+        ; Load Top Lft Head of mario, the tile is $32
+        TopLeft:
+            lda #142                  ; Sprite Y position at $0200
+            sta $0200
+            
+            lda #$32                 ; Sprite Tile # at $0201
+            sta $0201
+            
+            lda #%00000010           ; Sprite attribs at $0202, [flip vert] [flip hor] [priority: 0 in front, 1 behind background] [?] [?] [?] [colorpalette][colorpalette aswell]
+            sta $0202
+            
+            lda #70                 ; Sprite X position at $0203
+            sta $0203
+
+        TopRight:
+            ; Load Top Right Head of mario, the tile is $33
+            lda #142            ; Y position
+            sta $0204
+            
+            lda #$33             ; TOp Right Head 
+            sta $0205
+
+            lda #%00000010           ; Sprite attribs at $0202, [flip vert] [flip hor] [priority: 0 in front, 1 behind background] [?] [?] [?] [colorpalette][colorpalette aswell]
+            sta $0206
+
+            lda #78
+            sta $0207
+        
+        BottomLeft:
+            ; Load Botom Right Part of Mario
+            lda #150
+            sta $0208
+
+            lda #$42        ; botom left leg
+            sta $0209
+            
+            lda #%00000010 
+            sta $020A
+
+            lda #70
+            sta $020B
+
+        BottomRight:
+            ; Load Botom Right Part of Mario
+            lda #150
+            sta $020C
+
+            lda #$43        ; botom left leg
+            sta $020D
+            
+            lda #%00000010 
+            sta $020E
+
+            lda #78
+            sta $020F
+
+    ; TOOD BUFFERING NOT WORKING FIGURE OUT LATER
+    ; PutLivesIntoBackgroundBuffer:
+    ;     ; Set 0 into buffer
+    ;     lda #0
+    ;     sta $7004
+    ;     ; First see how many digits the players live are
+    ;     lda PlayerOneLives
+    ;     cmp #10 
+    ;     bcc OnesDigit  ; If it is less than 10, do not add the second digit, skip ahead
+    ;         ; Else, lets put hte first digit into the buffer
+    ;         ; Now get the specific value, its a product of 10
+    ;         TensDigit:
+    ;             ldx #1      ; Set counter, it starts at 1 for 10
+    ;             Loop:
+    ;                 inx
+    ;                 sec
+    ;                 sbc #10         ; subtract 10 from player one lives
+    ;                 cmp #10         ; If it is greater than 10, loop, else, get that digit in x
+    ;                 bcs Loop
+    ;                 ; else, let's get that , put x into the address
+    ;                 stx $7007
+    ;             EndLoop:
+    ;             lda #1          ; Length is one
+    ;             sta $7004
+
+    ;             lda #$50       ; Address on nametable
+    ;             sta $7005       
+
+    ;             lda #$24
+    ;             sta $7006
+
+    ;             ; Length 0 now to signal end of buffer
+    ;             lda #0
+    ;             sta $7008
+
+    ;     OnesDigit:
+    ;         lda #1          ; Set the length
+    ;         sta $7000
+
+    ;         lda #$00       ; Address on the name table
+    ;         sta $7001
+
+    ;         lda #$24
+    ;         sta $7002
+
+    ;         ; Let's do another comparison to see if greater than 10
+    ;         lda PlayerOneLives
+    ;         cmp #10
+    ;         bcc :+      ; If it is less, than just jump
+    ;             sec 
+    ;             sbc #10
+    ;         :
+    ;         sta  $7003
 
 
-;     jmp GameLoop          ; Force an infinite execution loop
+
+
+
+
+    
+
+    LoadUpWorld1:
+        lda Clock60
+        clc
+        adc #3          ; Wait 3 seconds
+        sta WaitUntilVar
+        ; Waste a few seconds
+        Loop:
+            lda Clock60
+            cmp WaitUntilVar
+            bne Loop
+        EndLoop:
+
+        
+        ; Prep for background change
+        lda #0
+        sta PPU_CTRL    ; freezes the vblank
+        sta PPU_MASK    ; doesn't show background
+
+        ; Clean up mario from previous frame, mario data goes up to #$0F
+        CleanMario:
+            lda #$02
+            sta SprPtr+1
+            lda #$00
+            sta SprPtr
+
+            lda #$FF
+            ldy #0
+            ClearMarioLoop:
+                sta (SprPtr),y
+                iny
+                cpy #$A0
+                bne ClearMarioLoop
+
+        ; Change the background
+        lda #<Screen1Data
+        sta ParamLoByte
+        lda #>Screen1Data
+        sta ParamHiByte
+
+        jsr LoadNameTable0       ; Jump to subroutine LoadBackground
+
+        lda #%10010000           ; Enable NMI & set background to use 2nd pattern table (at $1000)
+        sta PPU_CTRL
+        lda #%00011110           ; Enable sprites, enable background, no clipping on left side
+        sta PPU_MASK
+    
+        ; Move it back to first name table
+        lda #0
+        sta PPU_SCROLL
+        lda #0
+        sta PPU_SCROLL
+
+        ; CreateSprite0:               ; Push onto stack in order: Type, X, Y
+        ;     lda #ActorType::SPRITE0  ; Type variable
+        ;     sta ParamType                      ; Push type onto stack
+        ;     lda #0
+        ;     sta ParamXPos
+        ;     lda #20
+        ;     sta ParamYPos
+        ;     jsr AddNewActor
+        
+        CreatePlayer:
+            lda #ActorType::PLAYER      ; Actor type
+            sta ParamType
+            lda #50                 ; x
+            sta ParamXPos           
+            sta XPos
+            lda #150
+            sta ParamYPos           ; y 
+            sta YPos
+            jsr AddNewActor
+
+        
+        lda #GameState::WORLD1
+        sta CurrentGameState
+
+
+    GameLoop:
+
+        jsr ReadControllers
+        jsr HandleControllerInput
+        jsr UpdateActors
+        jsr RenderActors
+
+    ; We want to clamp the GameLoop since it can happen many times per frame
+    ClampGameLoop:
+        lda IsDrawComplete
+        WaitForVBlank:
+            cmp IsDrawComplete
+            beq WaitForVBlank
+
+        lda #0
+        sta IsDrawComplete
+
+        jmp GameLoop
+        
+    
 .endproc
 
 NMI:
+    SetDrawComplete:
+    lda #1
+    sta IsDrawComplete
     inc Frame
 
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -208,6 +448,34 @@ NMI:
     OAMStartDMACopy:             ; DMA copy of OAM data from RAM to PPU
         lda #$02                 ; Every frame, we copy spite data starting at $02**
         sta PPU_OAM_DMA          ; The OAM-DMA copy starts when we write to $4014
+
+
+    jsr BackgroundCopy
+
+
+
+
+    ; Jake THIS IS FREEZING GAME FIGURE OUT LATER JAKE
+    lda CurrentGameState        ; If it is equal to 0 then its in the title and there is no sprite 0 so we can skip          
+    beq FinishSprite0
+            
+        lda XScroll
+        sta PPU_SCROLL
+        lda #0
+        sta PPU_SCROLL
+
+    ; WaitForNoSprite0:
+    ;     lda PPU_STATUS
+    ;     and #%01000000           ; PPU address $2002 bit 6 is the sprite 0 hit flag
+    ;     bne WaitForNoSprite0     ; Loop until we do *not* have a sprite 0 hit
+
+    ; WaitForSprite0:
+    ;     lda PPU_STATUS
+    ;     and #%01000000           ; PPU address $2002 bit 6 is the sprite 0 hit flag
+    ;     beq WaitForSprite0       ; Loop until we do have a sprite 0 hit
+
+    FinishSprite0:
+
 
     ; TODO: increment clock 60 every 60 frames 
     lda Frame
@@ -237,43 +505,155 @@ PaletteData:
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Background data that must be copied to the nametable
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-BackgroundData:
+TitleScreenData:
 .incbin "finished-mario-titlescreen2.nam"
-; .byte $24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24
-; .byte $24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24
-; .byte $24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24
-; .byte $24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24
-; .byte $24,$24,$24,$24,$24,$36,$37,$36,$37,$36,$37,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24
-; .byte $24,$24,$24,$24,$35,$25,$25,$25,$25,$25,$25,$38,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$36,$37,$24,$24,$24,$24,$24
-; .byte $24,$24,$24,$24,$39,$3A,$3B,$3A,$3B,$3A,$3B,$3C,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$35,$25,$25,$38,$24,$24,$24,$24
-; .byte $24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$39,$3A,$3B,$3C,$24,$24,$24,$24
-; .byte $24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24
-; .byte $24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24
-; .byte $24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$53,$54,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24
-; .byte $24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$55,$56,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24
-; .byte $24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24
-; .byte $24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24
-; .byte $24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24
-; .byte $24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24
-; .byte $24,$24,$53,$54,$24,$24,$24,$24,$24,$24,$24,$24,$45,$45,$53,$54,$45,$45,$53,$54,$45,$45,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24
-; .byte $24,$24,$55,$56,$24,$24,$24,$24,$24,$24,$24,$24,$47,$47,$55,$56,$47,$47,$55,$56,$47,$47,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24
-; .byte $24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24
-; .byte $24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24
-; .byte $24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$60,$61,$62,$63,$24,$24,$24,$24
-; .byte $24,$24,$24,$24,$24,$24,$31,$32,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$64,$65,$66,$67,$24,$24,$24,$24
-; .byte $24,$24,$24,$24,$24,$30,$26,$34,$33,$24,$24,$24,$24,$36,$37,$36,$37,$24,$24,$24,$24,$24,$24,$24,$68,$69,$26,$6A,$24,$24,$24,$24
-; .byte $24,$24,$24,$24,$30,$26,$26,$26,$26,$33,$24,$24,$35,$25,$25,$25,$25,$38,$24,$24,$24,$24,$24,$24,$68,$69,$26,$6A,$24,$24,$24,$24
-; .byte $B4,$B5,$B4,$B5,$B4,$B5,$B4,$B5,$B4,$B5,$B4,$B5,$B4,$B5,$B4,$B5,$B4,$B5,$B4,$B5,$B4,$B5,$B4,$B5,$B4,$B5,$B4,$B5,$B4,$B5,$B4,$B5
-; .byte $B6,$B7,$B6,$B7,$B6,$B7,$B6,$B7,$B6,$B7,$B6,$B7,$B6,$B7,$B6,$B7,$B6,$B7,$B6,$B7,$B6,$B7,$B6,$B7,$B6,$B7,$B6,$B7,$B6,$B7,$B6,$B7
-; .byte $B4,$B5,$B4,$B5,$B4,$B5,$B4,$B5,$B4,$B5,$B4,$B5,$B4,$B5,$B4,$B5,$B4,$B5,$B4,$B5,$B4,$B5,$B4,$B5,$B4,$B5,$B4,$B5,$B4,$B5,$B4,$B6
-; .byte $B6,$B7,$B6,$B7,$B6,$B7,$B6,$B7,$B6,$B7,$B6,$B7,$B6,$B7,$B6,$B7,$B6,$B7,$B6,$B7,$B6,$B7,$B6,$B7,$B6,$B7,$B6,$B7,$B6,$B7,$B6,$B7
-; .byte $B4,$B5,$B4,$B5,$B4,$B5,$B4,$B5,$B4,$B5,$B4,$B5,$B4,$B5,$B4,$B5,$B4,$B5,$B4,$B5,$B4,$B5,$B4,$B5,$B4,$B5,$B4,$B5,$B4,$B5,$B4,$B5
-; .byte $B6,$B7,$B6,$B7,$B6,$B7,$B6,$B7,$B6,$B7,$B6,$B7,$B6,$B7,$B6,$B7,$B6,$B7,$B6,$B7,$B6,$B7,$B6,$B7,$B6,$B7,$B6,$B7,$B6,$B7,$B6,$B7
+
+BlankScreenData:
+.byte $27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27
+.byte $27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27
+.byte $27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27
+.byte $27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27
+.byte $27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27
+.byte $27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27
+.byte $27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27
+.byte $27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27
+.byte $27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27
+.byte $27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27
+.byte $27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27
+.byte $27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27
+.byte $27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27
+.byte $27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27
+.byte $27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27
+.byte $27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27
+.byte $27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27
+.byte $27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27
+.byte $27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27
+.byte $27,$27,$27,$27,$27,$27,$27,$29,$27,$27,$27,$27,$27,$27,$27,$27
+.byte $27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27
+.byte $27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27
+.byte $27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27
+.byte $27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27
+.byte $27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27
+.byte $27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27
+.byte $27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27
+.byte $27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27
+.byte $27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27
+.byte $27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27
+.byte $27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27
+.byte $27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27
+.byte $27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27
+.byte $27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27
+.byte $27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27
+.byte $27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27
+.byte $27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27
+.byte $27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27
+.byte $27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27
+.byte $27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27
+.byte $27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27
+.byte $27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27
+.byte $27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27
+.byte $27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27
+.byte $27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27
+.byte $27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27
+.byte $27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27
+.byte $27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27
+.byte $27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27
+.byte $27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27
+.byte $27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27
+.byte $27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27
+.byte $27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27
+.byte $27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27
+.byte $27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27
+.byte $27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27
+.byte $27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27
+.byte $27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27
+.byte $27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27
+.byte $27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27
+.byte $27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27
+.byte $27,$27,$27,$27,$50,$27,$27,$27,$27,$27,$04,$44,$15,$27,$27,$27
+.byte $27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27
+.byte $27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27
+EndBlankScreen:
+
+Screen1Data:
+    .byte $24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24
+    .byte $24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24
+    .byte $24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24
+    .byte $24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24
+    .byte $24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24
+    .byte $24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24
+    .byte $24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24
+    .byte $24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24
+    .byte $24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24
+    .byte $24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24
+    .byte $24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24
+    .byte $24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24
+    .byte $24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24
+    .byte $24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24
+    .byte $24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24
+    .byte $24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24
+    .byte $24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24
+    .byte $24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24
+    .byte $24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24
+    .byte $24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24
+    .byte $24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24
+    .byte $24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24
+    .byte $24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24
+    .byte $24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24
+    .byte $24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24
+    .byte $24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24
+    .byte $24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24
+    .byte $24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24
+    .byte $24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24
+    .byte $24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24
+    .byte $24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24
+    .byte $24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24
+    .byte $24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24
+    .byte $24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24
+    .byte $24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24
+    .byte $24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24
+    .byte $24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24
+    .byte $24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24
+    .byte $24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24
+    .byte $24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24
+    .byte $24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24
+    .byte $24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24
+    .byte $24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24
+    .byte $24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24
+    .byte $24,$24,$24,$24,$24,$31,$32,$24,$24,$24,$24,$24,$24,$24,$24,$24
+    .byte $24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24
+    .byte $24,$24,$24,$24,$30,$26,$34,$33,$24,$24,$24,$24,$24,$24,$24,$24
+    .byte $24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24
+    .byte $24,$24,$24,$30,$26,$34,$26,$34,$33,$24,$24,$24,$24,$24,$24,$24
+    .byte $24,$24,$24,$24,$24,$24,$24,$24,$36,$37,$36,$37,$36,$37,$24,$24
+    .byte $24,$24,$30,$26,$26,$26,$26,$26,$26,$33,$24,$24,$24,$24,$24,$24
+    .byte $24,$24,$24,$24,$24,$24,$24,$35,$25,$25,$25,$25,$25,$25,$38,$24
+    .byte $45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45
+    .byte $45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45
+    .byte $47,$47,$47,$47,$47,$47,$47,$47,$47,$47,$47,$47,$47,$47,$47,$47
+    .byte $47,$47,$47,$47,$47,$47,$47,$47,$47,$47,$47,$47,$47,$47,$47,$47
+    .byte $47,$47,$47,$47,$47,$47,$47,$47,$47,$47,$47,$47,$47,$47,$47,$47
+    .byte $47,$47,$47,$47,$47,$47,$47,$47,$47,$47,$47,$47,$47,$47,$47,$47
+    .byte $47,$47,$47,$47,$47,$47,$47,$47,$47,$47,$47,$47,$47,$47,$47,$47
+    .byte $47,$47,$47,$47,$47,$47,$47,$47,$47,$47,$47,$47,$47,$47,$47,$47
+    AttributeData:
+    .byte %00000000, %00000000, %00000000, %00000000, %00000000, %00000000, %00000000, %00000000
+    .byte %00000000, %10101010, %10101010, %00000000, %00000000, %00000000, %10101010, %00000000
+    .byte %00000000, %00000000, %00000000, %00000000, %11111111, %00000000, %00000000, %00000000
+    .byte %00000000, %00000000, %00000000, %00000000, %00000000, %00000000, %00000000, %00000000
+    .byte %11111111, %00000000, %00000000, %00001111, %00001111, %00000011, %00000000, %00000000
+    .byte %00000000, %00000000, %00000000, %00000000, %00000000, %00000000, %00000000, %00000000
+    .byte %11111111, %11111111, %11111111, %11111111, %11111111, %11111111, %11111111, %11111111
+    .byte %11111111, %11111111, %11111111, %11111111, %11111111, %11111111, %11111111, %11111111
+
+
+EndScreen1:
+
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Attributes tell which palette is used by a group of tiles in the nametable
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-AttributeData:
+; AttributeData:
 ; .byte %00000000, %00000000, %00000000, %00000000, %00000000, %00000000, %00000000, %00000000
 ; .byte %00000000, %10101010, %10101010, %00000000, %00000000, %00000000, %10101010, %00000000
 ; .byte %00000000, %00000000, %00000000, %00000000, %11111111, %00000000, %00000000, %00000000

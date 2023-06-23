@@ -126,19 +126,84 @@
         jsr DrawSprite                 ; Call routine to draw 1 SPRITE0 tile to the OAM
         jmp NextActor
       :
+      ; Let's get mario
       cmp #ActorType::PLAYER
       bne :+
-        lda ActorsArray+Actor::XPos,x
-        sta ParamXPos
-        lda ActorsArray+Actor::YPos,x
-        sta ParamYPos
-        lda #$60
-        sta ParamTileNum
-        lda #%00000000
-        sta ParamAttribs
-        lda #4
-        sta ParamNumTiles
-        jsr DrawSprite                 ; Call routine to draw 4 PLAYER tiles to the OAM
+        ; Each piece of mario
+        ; Top left small head
+        TopLeftSmallHead:
+          lda ActorsArray+Actor::XPos,x
+          sta ParamXPos
+          lda ActorsArray+Actor::YPos,x
+          sta ParamYPos
+
+          lda #$32
+          sta ParamTileNum
+          lda #%00000000
+          sta ParamAttribs
+          lda #1
+          sta ParamNumTiles
+          jsr DrawSprite                 ; Call routine to draw 4 PLAYER tiles to the OAM will need to call each one individually
+        EndTopLeftSmallHead:
+
+        TopRightSmallHead:
+          lda ActorsArray+Actor::XPos,x
+          clc 
+          adc #8
+          sta ParamXPos
+          lda ActorsArray+Actor::YPos,x
+          sta ParamYPos
+
+          lda #$33
+          sta ParamTileNum
+          lda #%00000000
+          sta ParamAttribs
+          lda #1
+          sta ParamNumTiles
+          jsr DrawSprite                 ; Call routine to draw 4 PLAYER tiles to the OAM will need to call each one individually
+        EndTopRightSmallHead:
+
+        
+        BottomLeftSmallFoot:
+          lda ActorsArray+Actor::XPos,x
+          sta ParamXPos
+          lda ActorsArray+Actor::YPos,x
+          clc 
+          adc #8
+          sta ParamYPos
+
+          lda #$4F
+          sta ParamTileNum
+          lda #%00000000
+          sta ParamAttribs
+          lda #1
+          sta ParamNumTiles
+          jsr DrawSprite                 ; Call routine to draw 4 PLAYER tiles to the OAM will need to call each one individually
+        EndBottomLeftSmallFoot:
+
+        BottomRightSmallFoot:
+
+          lda ActorsArray+Actor::XPos,x
+          clc
+          adc #8
+          sta ParamXPos
+
+          lda ActorsArray+Actor::YPos,x
+          clc 
+          adc #8
+          sta ParamYPos
+
+          lda #$4F
+          sta ParamTileNum
+          lda #%01000000
+          sta ParamAttribs
+          lda #1
+          sta ParamNumTiles
+          jsr DrawSprite                 ; Call routine to draw 4 PLAYER tiles to the OAM will need to call each one individually
+        EndBottomRightSmallFoot:
+
+
+
         jmp NextActor
       :
       cmp #ActorType::SUBMARINE
