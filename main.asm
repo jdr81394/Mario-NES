@@ -6,14 +6,22 @@
 .include "./datatypes/gameStates.inc"
 
 .segment "ZEROPAGE"
+Collision:      .res 1       ; Flag if a collision happened or not
+ParamXPos:      .res 1       ; Used as parameter to subroutine
+ParamYPos:      .res 1       ; Used as parameter to subroutine
+ParamRectX1:    .res 1       ; Used as parameter to subroutine
+ParamRectY1:    .res 1       ; Used as parameter to subroutine
+ParamRectX2:    .res 1       ; Used as parameter to subroutine
+ParamRectY2:    .res 1       ; Used as parameter to subroutine
 
-XPos:           .res 2       ; Player X 16-bit position (8.8 fixed-point): hi+lo/256px
-XVel:           .res 2       ; Player X (signed) velocity (in pixels per 256 frames)
+
+CollidablesArray:    .res MAX_COLLIDABLES * .sizeof(Collidable)
 
 Buttons:        .res 1       ; Pressed buttons (A|B|Sel|Start|Up|Dwn|Lft|Rgt)
 PrevButtons:    .res 1       ; Stores the previous buttons from the last frame
 
-
+XPos:           .res 2       ; Player X 16-bit position (8.8 fixed-point): hi+lo/256px
+XVel:           .res 2       ; Player X (signed) velocity (in pixels per 256 frames)
 
 BufPtr:         .res 2       ; Pointer to the buffer address - 16bits (lo,hi)
 
@@ -23,15 +31,11 @@ PlayerOneLives: .res 1       ; Lives for Mario
 
 Score:          .res 4       ; Score (1s, 10s, 100s, and 1000s digits in decimal)
 
-Collision:      .res 1       ; Flag if a collision happened or not
 
 
 YPos:           .res 2       ; Player Y 16-bit position (8.8 fixed-point): hi+lo/256px
-
 YVel:           .res 2       ; Player Y (signed) velocity (in pixels per 256 frames)
 
-PrevSubmarine:  .res 1       ; Stores the seconds that the last submarine was added
-PrevAirplane:   .res 1       ; Stores the seconds that the last airplane was added
 
 Frame:          .res 1       ; Counts frames (0 to 255 and repeats)
 IsDrawComplete: .res 1       ; Flag to indicate when VBlank is done drawing
@@ -49,15 +53,10 @@ NewColAddr:     .res 2       ; The destination address of the new column in PPU
 SourceAddr:     .res 2       ; The source address in ROM of the new column tiles
 
 ParamType:      .res 1       ; Used as parameter to subroutine
-ParamXPos:      .res 1       ; Used as parameter to subroutine
-ParamYPos:      .res 1       ; Used as parameter to subroutine
+
 ParamTileNum:   .res 1       ; Used as parameter to subroutine
 ParamNumTiles:  .res 1       ; Used as parameter to subroutine
 ParamAttribs:   .res 1       ; Used as parameter to subroutine
-ParamRectX1:    .res 1       ; Used as parameter to subroutine
-ParamRectY1:    .res 1       ; Used as parameter to subroutine
-ParamRectX2:    .res 1       ; Used as parameter to subroutine
-ParamRectY2:    .res 1       ; Used as parameter to subroutine
 
 ParamLoByte:     .res 1       ; Used as parameter to subroutine
 ParamHiByte:     .res 1       ; Used as parameter to subroutine
@@ -418,6 +417,9 @@ Main:
 
         jsr ReadControllers
         jsr HandleControllerInput
+
+        ; Jake Call Gravity Subroutine, pass Actor's Y Position to Param
+        jsr ImplementGravity
         jsr UpdateActors
         jsr RenderActors
 

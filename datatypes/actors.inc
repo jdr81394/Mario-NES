@@ -20,3 +20,20 @@
     XPos .word
     YPos .word
 .endstruct
+
+
+
+.enum CollidableType
+    NULL = 0
+    COLLIDABLE = 1
+
+.endenum
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Struct to hold the data for Collidable
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+.struct Collidable
+    Type .byte
+    XPos .byte
+    YPos .byte
+.endstruct

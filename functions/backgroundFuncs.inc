@@ -46,6 +46,10 @@ OuterLoop:
 InnerLoop:
     lda (BgPtr),y        ;   ; Lookup byte in ROM        The () syntax is to going to interpret this as a 16 bit address and then deference the address. The Y register is the only register that can use this syntax due to the way things are wired within the 6502 processor.
     sta PPU_DATA             ; Set value to send to PPU_DATA
+
+    ; Now let's check if its one of the collidable
+    jsr AddToCollidablesArray
+
     iny                      ; Y++
     cpy #0                 ; Is Y equal to 0, did it wrap around?
     beq IncreaseHiByte                   ; Not yet, keep looping
@@ -76,6 +80,11 @@ OuterLoop:
 InnerLoop:
     lda (BgPtr),y        ;   ; Lookup byte in ROM        The () syntax is to going to interpret this as a 16 bit address and then deference the address. The Y register is the only register that can use this syntax due to the way things are wired within the 6502 processor.
     sta PPU_DATA             ; Set value to send to PPU_DATA
+
+    ; Now let's check if its one of the collidables
+
+    jsr AddToCollidablesArray
+
     iny                      ; Y++
     cpy #0                 ; Is Y equal to 0, did it wrap around?
     beq IncreaseHiByte                   ; Not yet, keep looping
@@ -89,6 +98,34 @@ IncreaseHiByte:
 .endproc
 
 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Subroutine to check tile and add it to the collidables array
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+.proc AddToCollidablesArray
+
+    ; If there is a brick, that is 30, above it that means it is directly above and we do not need to add it
+    ; TODO Also we will need to exclude if it is in the attribute table.. we'll handle that in a bit
+    
+    ; Possible collidables: $47
+    DetermineIfCollidable:
+        ; Accumulator has the value to compare, it is already in the accumulator
+        ; Is it a block we want? Yes
+        cmp #$45
+        bne :+      ; If not equal, check next value
+            ; TODO If it does equal , then let's see if there is a collidable above it, to the left, and to the right 
+            ; push it into the collidables array
+            stx ParamXPos
+            sty ParamYPos
+            ; Must preserve the x value, the a value in the previous function is already used, y is not touched
+            txa     ; Transfer X to Accumulator
+            pha     ; Push X on accumulator to stack
+            jsr AddNewCollidable
+            pla     ; Pull old X off stack onto accumulator
+            tax     ; Transfer the X value on the accumulator to the stack
+        :
+
+    rts
+.endproc
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
