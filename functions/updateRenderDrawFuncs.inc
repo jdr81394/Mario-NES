@@ -21,6 +21,34 @@
         adc XPos+1
         sta XPos+1
         sta ActorsArray+Actor::XPos+1,x
+
+
+        txa       ; transfer x to a
+        pha       ; push to stack
+
+        jsr CheckCollidableCollision
+
+        pla      ; pull old x off stack
+        tax      ; push it back onto x
+        
+        lda Collision
+        ; If collision, then collision will not be equal to 0, and we want to use this value, so jump to sta, 
+        
+        bne :+
+          lda YPos
+          clc
+          adc YVel
+        :
+
+        sta ActorsArray+Actor::YPos,x
+        sta YPos
+        lda #0
+        adc YPos+1
+        sta YPos+1
+        sta ActorsArray+Actor::YPos+1,x
+
+
+
         jmp NextActor
       FinishActor:
 

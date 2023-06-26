@@ -15,20 +15,39 @@
       clc
       adc #GRAVITY_CONSTANT                  ; this is gravity for a second
       clc
-      adc YPos   
+      cmp #MAX_VEL
+      bcc :+
+        lda #MAX_VEL
+      :
+      sta YVel
+      ; adc YPos   
 
-      ; TODO : Is there a collision, loop through the collidables array 
-      jsr CheckCollidableCollision
+      ; sta HoldA1                                ; Push the accumulator onto the stack holdA1
+      ; stx HoldX2                               ; Push and save X register in the stack holdX2
 
-      pha                      ; Push accumulator which is the YVel onto the + Grav constant +  ypost onto stack
-      lda Collision
-      ; If no collision skip and store accumulator value, 
-      bne :+
-        ; If collision, set position to Collision because collision now has the y value
-        pla       ; Pull old accumulator value off 
-      : 
-      sta ActorsArray+Actor::YPos,x
-      sta YPos
+
+      ; ; TODO : Is there a collision, loop through the collidables array 
+      ; jsr CheckCollidableCollision
+
+      ; ldx HoldX2
+      ; ; tax                                ; Pull and restore the old value of X
+      ; ; lda HoldA1                              ; Restore the old accumulator which is YVel + gravity constant + y position
+
+      ; lda Collision
+
+      ; ; If collision, then collisi will not be equal to 0, and we want to use this value, so jump to sta, 
+      ; bne :+ 
+      ;   ; If collision is equal to 0, then no collision, and pull off stack
+      ;   ; pla       ; Pull old accumulator value off 
+      ;   lda HoldA1
+      ; : 
+      ; sta ActorsArray+Actor::YPos,x
+      ; sta YPos
+
+      beq :+
+        ;pla  ; Restore the old accumulator which is YVel + gravity constant + y position  - something is going wrong with this
+      :
+
       NextActor:
         txa
         clc
@@ -47,54 +66,47 @@
 ;; Params = ParamXPos, ParamYPos (are the X and Y position of the missile)
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 .proc CheckCollidableCollision
-    pha                                ; Push the accumulator onto the stack
-    txa
-    pha                                ; Push and save X register in the stack
-
-    ldx #0
-    stx Collision                      ; Collision = 0
 
   CollisionLoop:
-    cpx #MAX_COLLIDABLES * .sizeof(Collidable)   ; We loop all entities, looking for enemies (airplanes)
-    beq FinishCollisionCheck
-      lda CollidablesArray+Collidable::Type,x    ; Load the type of the actor we are looping
-      cmp #CollidableType::COLLIDABLE            
-      bne NextCollidable                    ; If it's NOT collidable, bypass this and move check the next one
+    lda Collision
+    bne FinishCollisionCheck ; If it is not equal to 0 jump to finish collision check, means there was already a collision on this loop
+      cpx #MAX_COLLIDABLES * .sizeof(Collidable)   ; We loop all entities, looking for enemies (airplanes)
+      beq FinishCollisionCheck
+        lda CollidablesArray+Collidable::Type,x    ; Load the type of the actor we are looping
+        cmp #CollidableType::COLLIDABLE            
+        bne NextCollidable                    ; If it's NOT collidable, bypass this and move check the next one
 
-      ;; LOAD BOUNDING BOX X1, Y1, X2, and Y2
-      lda CollidablesArray+Collidable::XPos,x    ; Bounding Box X1
-      sta ParamRectX1
-      lda CollidablesArray+Collidable::YPos,x    ; Bouding Box Y1
-      sta ParamRectY1
+        ;; LOAD BOUNDING BOX X1, Y1, X2, and Y2
+        lda CollidablesArray+Collidable::XPos,x    ; Bounding Box X1
+        sta ParamRectX1
+        lda CollidablesArray+Collidable::YPos,x    ; Bouding Box Y1
+        sta ParamRectY1
 
-      lda CollidablesArray+Collidable::XPos,x
-      clc
-      adc #8                         ; Get right value of the collidable bounding box by adding 8 pixels to the right
-      sta ParamRectX2                  ; Bounding Box X2
+        lda CollidablesArray+Collidable::XPos,x
+        clc
+        adc #24                        ; Get right value of the collidable bounding box by adding 8 pixels to the right
+        sta ParamRectX2                  ; Bounding Box X2
 
-      lda CollidablesArray+Collidable::YPos,x
-      clc
-      adc #8                           ; Get the bottom of the collidable bounding box by adding 8
-      sta ParamRectY2                  ; Bouding Box Y2
+        lda CollidablesArray+Collidable::YPos,x
+        clc
+        adc #8                           ; Get the bottom of the collidable bounding box by adding 8
+        sta ParamRectY2                  ; Bouding Box Y2
 
-      jsr DidUnderCollisionOccur     ; Proceed to test if point is inside bounding box
+        jsr DidUnderCollisionOccur     ; Proceed to test if point is inside bounding box
 
-      lda Collision
-      beq NextCollidable                    ; If no collision, don't do anything
+        lda Collision
+        beq NextCollidable                    ; If no collision, don't do anything
 
-        jmp FinishCollisionCheck       ; Also, if collision happened we stop looping other enemies and leave the subroutine
+          jmp FinishCollisionCheck       ; Also, if collision happened we stop looping other enemies and leave the subroutine
 
-  NextCollidable:
-      txa
-      clc
-      adc #.sizeof(Collidable)              ; X += sizeof(Actor)
-      tax
-      jmp CollisionLoop         ; Loop to check the next actor to see if it's an enemy (collidable)
+    NextCollidable:
+        txa
+        clc
+        adc #.sizeof(Collidable)              ; X += sizeof(Actor)
+        tax
+        jmp CollisionLoop         ; Loop to check the next actor to see if it's an enemy (collidable)
 
-FinishCollisionCheck:
-    pla
-    tax                                ; Pull and restore the old value of X
-    pla
+  FinishCollisionCheck:
 
     rts
 .endproc
@@ -152,8 +164,6 @@ FinishCollisionCheck:
       jmp EnemiesCollisionLoop         ; Loop to check the next actor to see if it's an enemy (airplane)
 
 FinishCollisionCheck:
-    pla
-    tax                                ; Pull and restore the old value of X
 
     rts
 .endproc
@@ -185,14 +195,14 @@ FinishCollisionCheck:
     cmp ParamRectY2                    ; Compare it with the enemy bounding box right
     bcs PointIsOutside                 ; If it's greater than, we stop checking because there is no collision
 
-  PointIsInside:
-    lda ParamYPos                             ; If we reach here, the point is inside the bounding box!
-    sta Collision                      ; Collision detected!
-    jmp EndCollisionCheck
+    PointIsInside:
+      lda ParamYPos                             ; If we reach here, the point is inside the bounding box!
+      sta Collision                      ; Collision detected!
+      jmp EndCollisionCheck
 
-  PointIsOutside:
-    lda #0                             ; If we branch here, the point was outside the bounding box
-    sta Collision                      ; No collision detected!
+    PointIsOutside:
+      lda #0                             ; If we branch here, the point was outside the bounding box
+      sta Collision                      ; No collision detected!
 
   EndCollisionCheck:
     rts

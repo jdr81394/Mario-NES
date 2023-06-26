@@ -111,18 +111,76 @@ IncreaseHiByte:
         ; Accumulator has the value to compare, it is already in the accumulator
         ; Is it a block we want? Yes
         cmp #$45
-        bne :+      ; If not equal, check next value
+        bne CheckNext      ; If not equal, check next value
             ; TODO If it does equal , then let's see if there is a collidable above it, to the left, and to the right 
             ; push it into the collidables array
-            stx ParamXPos
-            sty ParamYPos
+
+            
+            ; WE DO NOT NEED TO PUSH ACCUMULATOR TO STACK THERE IS NOTHING IMPORTANT IN THERE FROM PREVIOUS FUNCTION
+
+            txa                 ; transfer x to accumulator
+            pha                 ; push x in accumulator to stack
+            sta HoldX
+
+            ; Since each screen is 32 columns long ( its also 8 pixels wide per column )
+            ; In order to get the x placement we need to load up the 255 bytes are find the remainder value
+            ; Also, for every power of 8 it goes over it will also increase the Y position by 8
+            
+            ; Divide by 32 until it is less than 32 to find the x position
+            tya                  ; Transfer y ( little loop ) to accumulator
+            sta HoldY             ; hold the little loop
+
+            DetermineXParam:
+                ldy #0                  ; This will be used to help us get a precise Y value 
+                Loop:
+                    cmp #32              ; If it is greater than 32, subtract 32 by looping
+                    bcc SetXParam
+                        iny              ; This increments Y by 1 
+                        sec
+                        sbc #32
+                        jmp Loop
+        
+                SetXParam:
+                    tax                 ; Transfer accumulator to 8
+                    lda #0              ; Set it equal to 0
+                    ; Now in the accumulator, we have the x placement of the tile we just need to multiply this by 8 for the pixels
+                    AddLoop:
+                        clc 
+                        adc #8
+                        ; Decrement y one time to move up the x position that it will be at
+                        dex
+                        bne AddLoop ; If not equal to 0, loop again
+
+                    ; Finally, store the ParamXPos
+                    sta ParamXPos
+            
+            DetermineYParam:
+                pla                 ; PUll the old x off the stack  that has the counter for the outer loop ( Big loop )
+                tax                 ; Transfer the accumulator that has the old X ( big loop counter ) to X
+                tya                 ; Transfer Y to accumulator with precise Y value within the bands 
+                ; X register = x counter (big loop counter) , accumulator has precise y value within bands
+                SetYLoop:
+                    cpx #0
+                    beq FinishYLoop
+                        clc 
+                        adc #64     ; This is 8 rows of pixels which is 8x8 = 64
+                        dex
+                        jmp SetYLoop
+                FinishYLoop:
+
+            sta ParamYPos
+                
             ; Must preserve the x value, the a value in the previous function is already used, y is not touched
-            txa     ; Transfer X to Accumulator
-            pha     ; Push X on accumulator to stack
+            ; txa     ; Transfer X to Accumulator
+            ; pha     ; Push X on accumulator to stack
             jsr AddNewCollidable
-            pla     ; Pull old X off stack onto accumulator
-            tax     ; Transfer the X value on the accumulator to the stack
-        :
+            ; pla     ; Pull old X off stack onto accumulator
+            ; tax     ; Transfer the X value on the accumulator to the stack
+            ; Pull off the original values that were pushed onto the stack
+            ldx HoldX
+            ldy HoldY
+
+        CheckNext:
 
     rts
 .endproc

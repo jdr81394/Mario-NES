@@ -6,7 +6,20 @@
 .include "./datatypes/gameStates.inc"
 
 .segment "ZEROPAGE"
+
 Collision:      .res 1       ; Flag if a collision happened or not
+
+Buttons:        .res 1       ; Pressed buttons (A|B|Sel|Start|Up|Dwn|Lft|Rgt)
+PrevButtons:    .res 1       ; Stores the previous buttons from the last frame
+
+YPos:           .res 2       ; Player Y 16-bit position (8.8 fixed-point): hi+lo/256px
+
+HoldX:           .res 1      
+HoldY:           .res 1
+HoldA1:         .res 1
+HoldX2:          .res 1
+
+
 ParamXPos:      .res 1       ; Used as parameter to subroutine
 ParamYPos:      .res 1       ; Used as parameter to subroutine
 ParamRectX1:    .res 1       ; Used as parameter to subroutine
@@ -17,8 +30,7 @@ ParamRectY2:    .res 1       ; Used as parameter to subroutine
 
 CollidablesArray:    .res MAX_COLLIDABLES * .sizeof(Collidable)
 
-Buttons:        .res 1       ; Pressed buttons (A|B|Sel|Start|Up|Dwn|Lft|Rgt)
-PrevButtons:    .res 1       ; Stores the previous buttons from the last frame
+
 
 XPos:           .res 2       ; Player X 16-bit position (8.8 fixed-point): hi+lo/256px
 XVel:           .res 2       ; Player X (signed) velocity (in pixels per 256 frames)
@@ -33,7 +45,6 @@ Score:          .res 4       ; Score (1s, 10s, 100s, and 1000s digits in decimal
 
 
 
-YPos:           .res 2       ; Player Y 16-bit position (8.8 fixed-point): hi+lo/256px
 YVel:           .res 2       ; Player Y (signed) velocity (in pixels per 256 frames)
 
 
@@ -403,7 +414,7 @@ Main:
             lda #50                 ; x
             sta ParamXPos           
             sta XPos
-            lda #150
+            lda #10
             sta ParamYPos           ; y 
             sta YPos
             jsr AddNewActor
@@ -455,6 +466,9 @@ NMI:
     jsr BackgroundCopy
 
 
+    ; Reset collision
+    ; lda #0
+    ; sta Collision
 
 
     ; Jake THIS IS FREEZING GAME FIGURE OUT LATER JAKE
