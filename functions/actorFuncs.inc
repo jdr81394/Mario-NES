@@ -1,35 +1,4 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Subroutine to add new collidable to the array in the first empty slot found
-;; ParamXPos, ParamYPos
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-.proc AddNewCollidable
-    ldx #0                            ; X = 0
-  ArrayLoop:
-    cpx #MAX_COLLIDABLES * .sizeof(Collidable)  ; Reached maximum number of actors allowed in the array?
-    beq EndRoutine                    ; Then we skip and don't add a new actor
-    lda CollidablesArray+Collidable::Type,x
-    cmp #CollidableType::NULL              ; If the actor type of this array position is NULL
-    beq AddNewActorToArray            ;   Then: we found an empty slot, proceed to add actor to position [x]
-   NextActor:
-    txa
-    clc
-    adc #.sizeof(Collidable)               ; Otherwise, we offset to the check the next actor in the array
-    tax                               ; X += sizeof(Actor)
-    jmp ArrayLoop
-
-  AddNewActorToArray:                 ; Here we add a new actor at index [x] of the array
-    lda #CollidableType::COLLIDABLE         ; They should all be of type collidable
-    sta CollidablesArray+Collidable::Type,x
-    lda ParamXPos                     ; Fetch parameter "actor position X" from RAM
-    sta CollidablesArray+Collidable::XPos,x
-    lda ParamYPos                     ; Fetch parameter "actor position Y" from RAM
-    sta CollidablesArray+Collidable::YPos,x
-EndRoutine:
-    rts
-.endproc
-
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Subroutine to add new actor to the array in the first empty slot found
 ;; Params = ParamType, ParamXPos, ParamYPos
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;

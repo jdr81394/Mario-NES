@@ -74,7 +74,7 @@
           adc #1
           sta ParamYPos                   ; Missile position to be checked Y += 1 (plus 1 pixels from the top)
 
-          jsr CheckEnemyCollision         ; Perform collision check between the missile and other enemy actor
+          ; jsr CheckEnemyCollision         ; Perform collision check between the missile and other enemy actor
 
           lda Collision                   ; If collision happened, delete the missile
           beq NoCollisionFound
@@ -124,199 +124,16 @@
     rts
 .endproc
 
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Subroutine to loop all actors and send their tiles to the OAM-RAM at $200
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-.proc RenderActors
-    lda #$02
-    sta SprPtr+1
-    lda #$00
-    sta SprPtr                         ; Point SprPtr to $0200
 
-    ldy #0                             ; Count how many tiles we are sending
-    ldx #0                             ; Counts how many actors we are looping
-    ActorsLoop:
-      lda ActorsArray+Actor::Type,x
-      
-      cmp #ActorType::SPRITE0
-      bne :+
-        lda ActorsArray+Actor::XPos,x
-        sta ParamXPos
-        lda ActorsArray+Actor::YPos,x
-        sta ParamYPos
-        lda #$70
-        sta ParamTileNum
-        lda #%00100000
-        sta ParamAttribs
-        lda #1
-        sta ParamNumTiles 
-        jsr DrawSprite                 ; Call routine to draw 1 SPRITE0 tile to the OAM
-        jmp NextActor
-      :
-      ; Let's get mario
-      cmp #ActorType::PLAYER
-      bne :+
-        ; Each piece of mario
-        ; Top left small head
-        TopLeftSmallHead:
-          lda ActorsArray+Actor::XPos,x
-          sta ParamXPos
-          lda ActorsArray+Actor::YPos,x
-          sta ParamYPos
-
-          lda #$32
-          sta ParamTileNum
-          lda #%00000000
-          sta ParamAttribs
-          lda #1
-          sta ParamNumTiles
-          jsr DrawSprite                 ; Call routine to draw 4 PLAYER tiles to the OAM will need to call each one individually
-        EndTopLeftSmallHead:
-
-        TopRightSmallHead:
-          lda ActorsArray+Actor::XPos,x
-          clc 
-          adc #8
-          sta ParamXPos
-          lda ActorsArray+Actor::YPos,x
-          sta ParamYPos
-
-          lda #$33
-          sta ParamTileNum
-          lda #%00000000
-          sta ParamAttribs
-          lda #1
-          sta ParamNumTiles
-          jsr DrawSprite                 ; Call routine to draw 4 PLAYER tiles to the OAM will need to call each one individually
-        EndTopRightSmallHead:
-
-        
-        BottomLeftSmallFoot:
-          lda ActorsArray+Actor::XPos,x
-          sta ParamXPos
-          lda ActorsArray+Actor::YPos,x
-          clc 
-          adc #8
-          sta ParamYPos
-
-          lda #$4F
-          sta ParamTileNum
-          lda #%00000000
-          sta ParamAttribs
-          lda #1
-          sta ParamNumTiles
-          jsr DrawSprite                 ; Call routine to draw 4 PLAYER tiles to the OAM will need to call each one individually
-        EndBottomLeftSmallFoot:
-
-        BottomRightSmallFoot:
-
-          lda ActorsArray+Actor::XPos,x
-          clc
-          adc #8
-          sta ParamXPos
-
-          lda ActorsArray+Actor::YPos,x
-          clc 
-          adc #8
-          sta ParamYPos
-
-          lda #$4F
-          sta ParamTileNum
-          lda #%01000000
-          sta ParamAttribs
-          lda #1
-          sta ParamNumTiles
-          jsr DrawSprite                 ; Call routine to draw 4 PLAYER tiles to the OAM will need to call each one individually
-        EndBottomRightSmallFoot:
-
-
-
-        jmp NextActor
-      :
-      cmp #ActorType::SUBMARINE
-      bne :+
-        lda ActorsArray+Actor::XPos,x
-        sta ParamXPos
-        lda ActorsArray+Actor::YPos,x
-        sta ParamYPos
-        lda #$04
-        sta ParamTileNum
-        lda #%00100000
-        sta ParamAttribs
-        lda #4
-        sta ParamNumTiles
-        jsr DrawSprite                 ; Call routine to draw 4 SUBMARINE tiles to the OAM
-        jmp NextActor
-      :
-      cmp #ActorType::AIRPLANE
-      bne :+
-        lda ActorsArray+Actor::XPos,x
-        sta ParamXPos
-        lda ActorsArray+Actor::YPos,x
-        sta ParamYPos
-        lda #$10
-        sta ParamTileNum
-        lda #%00000011
-        sta ParamAttribs
-        lda #3
-        sta ParamNumTiles
-        jsr DrawSprite                 ; Call routine to draw 3 AIRPLANE tiles to the OAM
-        jmp NextActor
-      :
-      cmp #ActorType::MISSILE
-      bne :+
-        lda ActorsArray+Actor::XPos,x
-        sta ParamXPos
-        lda ActorsArray+Actor::YPos,x
-        sta ParamYPos
-        lda #$50
-        sta ParamTileNum
-        lda #%00000001
-        sta ParamAttribs
-        lda #1
-        sta ParamNumTiles
-        jsr DrawSprite                 ; Call routine to draw 1 MISSILE tile to the OAM
-        jmp NextActor
-      :
-      NextActor:
-        txa
-        clc
-        adc #.sizeof(Actor)
-        tax
-        cmp #MAX_ACTORS * .sizeof(Actor)
-        
-        beq :+
-          jmp ActorsLoop               ; Use absolute jump to avoid branch limit of [-128..127]
-        :
-      
-        tya
-        pha                            ; Save the Y register to the stack
-
-      LoopTrailingTiles:
-        cpy PrevOAMCount
-        bcs :+
-          sta (SprPtr),y               ; Set Y position to $FF (to hide tile)
-          iny
-          sta (SprPtr),y               ; Set tile number as $FF
-          iny
-          sta (SprPtr),y               ; Set attribs as $FF
-          iny
-          sta (SprPtr),y               ; Set X position to $FF (to hide tile)
-          iny
-          jmp LoopTrailingTiles
-        :
-
-        pla                            ; Save the previous value of Y into PrevOAMCount
-        sta PrevOAMCount               ; This is the total number of bytes that we just sent to the OAM
-
-    rts
-.endproc
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Routine to loop "NumTiles" times, sending bytes to the OAM-RAM.
 ;; Params = ParamXPos, ParamYPos, ParamTileNum, ParamAttribs, ParamNumTiles
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 .proc DrawSprite
+    ; tya                               ; Save the value of the Y Register
+    ; pha
+
     txa
     pha                                ; Save the value of the X register before anything
     
@@ -328,7 +145,7 @@
 
        lda ParamTileNum                ; Send the Tile # to the OAM
        sta (SprPtr),y
-       inc ParamTileNum                ; ParamTileNum++
+      ;  inc ParamTileNum                ; ParamTileNum++
        iny
 
        lda ParamAttribs                ; Send the attributes to the OAM
@@ -337,9 +154,9 @@
 
        lda ParamXPos                   ; Send X position to the OAM
        sta (SprPtr),y
-       clc
-       adc #8
-       sta ParamXPos                   ; ParamXPos += 8
+      ;  clc
+      ;  adc #8
+      ;  sta ParamXPos                   ; ParamXPos += 8
 
        iny
 
@@ -349,6 +166,11 @@
 
     pla
     tax                                ; Restore the previous value of X register
+
+    ; pla
+    ; tay
+
+
 
     rts
 .endproc

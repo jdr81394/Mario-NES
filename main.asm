@@ -4,8 +4,15 @@
 .include "./headers/utils.inc"
 .include "./datatypes/actors.inc"
 .include "./datatypes/gameStates.inc"
+.include "./datatypes/marioAnimations.inc"
 
 .segment "ZEROPAGE"
+ActorsArray:    .res MAX_ACTORS * .sizeof(Actor)
+
+MarioAnimationStates: .res 1  ; Tells us what he is doing
+
+SprPtr:         .res 2       ; Pointer to the sprite address in OAM RAM - 16bits (lo,hi)   Is used in RenderingActors and in selecting proper animation frame!
+RomSprPtr:      .res 2       ; Pointer to the ROM sprite address
 
 Collision:      .res 1       ; Flag if a collision happened or not
 
@@ -14,10 +21,8 @@ PrevButtons:    .res 1       ; Stores the previous buttons from the last frame
 
 YPos:           .res 2       ; Player Y 16-bit position (8.8 fixed-point): hi+lo/256px
 
-HoldX:           .res 1      
-HoldY:           .res 1
-HoldA1:         .res 1
-HoldX2:          .res 1
+VarX:           .res 1      
+VarY:           .res 1
 
 
 ParamXPos:      .res 1       ; Used as parameter to subroutine
@@ -40,6 +45,7 @@ BufPtr:         .res 2       ; Pointer to the buffer address - 16bits (lo,hi)
 MenuItem:       .res 1       ; Keep track of the menu item that is selected
 
 PlayerOneLives: .res 1       ; Lives for Mario
+MarioAttributes: .res 1       ; Hold the attributes for mario: at start %00000000 [flip vert] [flip hor] [priority: 0 in front, 1 behind background] [?] [?] [?] [colorpalette][colorpalette aswell]
 
 Score:          .res 4       ; Score (1s, 10s, 100s, and 1000s digits in decimal)
 
@@ -54,7 +60,6 @@ Clock60:        .res 1       ; Counter that increments per second (60 frames)
 WaitUntilVar:    .res 1       ; Use this to compare against the Clock60
 
 BgPtr:          .res 2       ; Pointer to background address - 16bits (lo,hi)
-SprPtr:         .res 2       ; Pointer to the sprite address - 16bits (lo,hi)
 PalPtr:         .res 2       ; Pointer to the palette address - 16bits (lo,hi)
 
 XScroll:        .res 1       ; Store the horizontal scroll position
@@ -79,17 +84,214 @@ Seed:           .res 2       ; Initialize 16-bit seed to any value except 0
 
 CurrentGameState:      .res 1       ; Keep track of game state
 
-ActorsArray:    .res MAX_ACTORS * .sizeof(Actor)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; PRG-ROM code located at $8000
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 .segment "CODE"
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Subroutine to loop all actors and send their tiles to the OAM-RAM at $200
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+.proc RenderActors
+    lda #$02
+    sta SprPtr+1
+    lda #$00
+    sta SprPtr                         ; Point SprPtr to $0200
+
+    ldy #0                             ; Count how many tiles we are sending
+    ldx #0                             ; Counts how many actors we are looping
+    ActorsLoop:
+      lda ActorsArray+Actor::Type,x
+      
+      cmp #ActorType::SPRITE0
+      bne :+
+        lda ActorsArray+Actor::XPos,x
+        sta ParamXPos
+        lda ActorsArray+Actor::YPos,x
+        sta ParamYPos
+        lda #$70
+        sta ParamTileNum
+        lda #%00100000
+        sta ParamAttribs
+        lda #1
+        sta ParamNumTiles 
+        jsr DrawSprite                 ; Call routine to draw 1 SPRITE0 tile to the OAM
+        jmp NextActor
+      :
+      ; Let's get mario
+      cmp #ActorType::PLAYER
+      bne EndOfPlayer
+
+        ; Push the X Position into the variable first, add the offsets later
+        lda ActorsArray+Actor::XPos,x
+        sta ParamXPos
+
+        lda ActorsArray+Actor::YPos,x
+        sta ParamYPos       ; Store the parameter Y
+
+        
+
+        txa                     ; push X onto accumulator to transfer to stack
+        pha                     ; push onto stack
+
+        ldx #0                  ; Set this counter to 0 to go through mario's tiles
+
+        ; Get mario's state, then render based on the state
+        lda MarioAnimationStates
+        bne EndOfStandingRight                        ; If its not 0, jump to next check
+
+
+          ; 0 is for STANDING_RIGHT
+          ; This will load from top to bottom, left first then to right: TopLeft, TopRight, BottomLeft, BottomRIght
+          Loop:
+            lda Standing0,x     ; Get tile then attribute
+            sta ParamTileNum        ; Tile Num
+
+            ; lda ActorsArray+Actor::XPos,x
+            ; If x equals 2, then it we need to add 8 to the x parameter
+            cpx #2
+            ; If it doesn't equal 2 skip ahead
+            bne :+
+              lda ParamXPos
+              ; If it does, then add it to  the parameter
+              clc 
+              adc #8
+              sta ParamXPos
+            :
+
+            ; lda ActorsArray+Actor::YPos,x
+            ; If y equals 4, then it must be bottom left
+            cpx #4
+            bne :+
+                ; Undo param x addition
+                lda ParamXPos
+                sec
+                sbc #8
+                sta ParamXPos
+
+                lda ParamYPos
+                clc 
+                adc #8
+                sta ParamYPos
+            :
+
+            
+            ; If x equals 6, then it's the bottom right and we should add 8 to x again.
+            ; Y param ALREADY has 8 added
+            cpx #6
+            bne :+
+                lda ParamXPos
+                ; If it does, then add it to  the parameter
+                clc 
+                adc #8
+                sta ParamXPos
+            :
+     
+            inx                     ; Go to attribute and increement
+            
+            lda Standing0,x     ; attribute
+            sta ParamAttribs
+
+            lda #1
+            sta ParamNumTiles
+
+            jsr DrawSprite
+
+            inx
+            cpx #8
+            bcc Loop
+             
+          EndLoop:
+
+        EndOfStandingRight:
+        pla                     ; pull old x off accumulator
+        tax                     ; transfer it to the X Register
+        jmp NextActor
+
+      EndOfPlayer:
+      cmp #ActorType::SUBMARINE
+      bne :+
+        lda ActorsArray+Actor::XPos,x
+        sta ParamXPos
+        lda ActorsArray+Actor::YPos,x
+        sta ParamYPos
+        lda #$04
+        sta ParamTileNum
+        lda #%00100000
+        sta ParamAttribs
+        lda #4
+        sta ParamNumTiles
+        jsr DrawSprite                 ; Call routine to draw 4 SUBMARINE tiles to the OAM
+        jmp NextActor
+      :
+      cmp #ActorType::AIRPLANE
+      bne :+
+        lda ActorsArray+Actor::XPos,x
+        sta ParamXPos
+        lda ActorsArray+Actor::YPos,x
+        sta ParamYPos
+        lda #$10
+        sta ParamTileNum
+        lda #%00000011
+        sta ParamAttribs
+        lda #3
+        sta ParamNumTiles
+        jsr DrawSprite                 ; Call routine to draw 3 AIRPLANE tiles to the OAM
+        jmp NextActor
+      :
+      cmp #ActorType::MISSILE
+      bne :+
+        lda ActorsArray+Actor::XPos,x
+        sta ParamXPos
+        lda ActorsArray+Actor::YPos,x
+        sta ParamYPos
+        lda #$50
+        sta ParamTileNum
+        lda #%00000001
+        sta ParamAttribs
+        lda #1
+        sta ParamNumTiles
+        jsr DrawSprite                 ; Call routine to draw 1 MISSILE tile to the OAM
+        jmp NextActor
+      :
+      NextActor:
+        txa
+        clc
+        adc #.sizeof(Actor)
+        tax
+        cmp #MAX_ACTORS * .sizeof(Actor)
+        
+        beq :+
+          jmp ActorsLoop               ; Use absolute jump to avoid branch limit of [-128..127]
+        :
+      
+        tya
+        pha                            ; Save the Y register to the stack
+
+      LoopTrailingTiles:
+        cpy PrevOAMCount
+        bcs :+
+          sta (SprPtr),y               ; Set Y position to $FF (to hide tile)
+          iny
+          sta (SprPtr),y               ; Set tile number as $FF
+          iny
+          sta (SprPtr),y               ; Set attribs as $FF
+          iny
+          sta (SprPtr),y               ; Set X position to $FF (to hide tile)
+          iny
+          jmp LoopTrailingTiles
+        :
+
+        pla                            ; Save the previous value of Y into PrevOAMCount
+        sta PrevOAMCount               ; This is the total number of bytes that we just sent to the OAM
+
+    rts
+.endproc
 .include "./functions/actorFuncs.inc"
 .include "./functions/backgroundFuncs.inc"
 .include "./functions/controllerFuncs.inc"
 .include "./functions/updateRenderDrawFuncs.inc"
-.include "./functions/funcs.inc"
+.include "./functions/collisionFuncs.inc"
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Reset handler (called when the NES resets or powers on)
@@ -409,6 +611,10 @@ Main:
         ;     jsr AddNewActor
         
         CreatePlayer:
+            ; Set mario to standing
+            lda #MarioAnimations::STANDING_RIGHT
+            sta MarioAnimationStates
+
             lda #ActorType::PLAYER      ; Actor type
             sta ParamType
             lda #50                 ; x
@@ -510,6 +716,25 @@ Skip:
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 IRQ:
     rti                      ; Return from interrupt
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Mario Animation Frames - Action - Frame
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+Standing0:
+    TopLeft:
+        .byte $32                       ; Sprite Tile #
+        .byte %00000000
+    TopRight:
+        .byte $33                       ; index 2 - Sprite Tile #
+        .byte %00000000
+
+    BottomLeft:
+        .byte $4F                       ; index 4
+        .byte %00000000
+    BottomRight:
+        .byte $4F                      ; index 6 - This is just flipped
+        .byte %01000000
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Hardcoded list of color values in ROM to be loaded by the PPU

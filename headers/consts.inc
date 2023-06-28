@@ -29,7 +29,7 @@ BUTTON_RIGHT  = $01          ; 00000001
 ;; Maximum number of actors & collidables that we can have
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 MAX_ACTORS = 10
-MAX_COLLIDABLES = 50
+MAX_COLLIDABLES = 49
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
