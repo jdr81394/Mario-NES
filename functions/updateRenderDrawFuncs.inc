@@ -245,20 +245,21 @@
 ; The sequence of numbers it generates will repeat after 65535 calls.
 ; Execution time is an average of 125 cycles (excluding jsr and rts)
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-.proc GetRandomNumber
-    ldy #8                   ; Loop counter (generates 8 bits)
-    lda Seed+0
-:   asl                      ; Shift the register
-    rol Seed+1
-    bcc :+
-      eor #$39               ; Apply XOR feedback when a 1 bit is shifted out
-    :
-    dey
-    bne :--
-    sta Seed+0               ; Saves the value in A into the Seed
-    cmp #0                   ; Set flags
-    rts
-.endproc
+; seed variable needed - .res 2
+; .proc GetRandomNumber
+;     ldy #8                   ; Loop counter (generates 8 bits)
+;     lda Seed+0
+; :   asl                      ; Shift the register
+;     rol Seed+1
+;     bcc :+
+;       eor #$39               ; Apply XOR feedback when a 1 bit is shifted out
+;     :
+;     dey
+;     bne :--
+;     sta Seed+0               ; Saves the value in A into the Seed
+;     cmp #0                   ; Set flags
+;     rts
+; .endproc
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Increment the Score value simulating BCD mode

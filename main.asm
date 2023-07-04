@@ -8,7 +8,7 @@
 
 .segment "ZEROPAGE"
 
-MarioAnimationFrameCountdown: .res 2 ; Holds the frame that this has started on 
+MarioAnimationFrameCountdown: .res 1 ; Holds the frame that this has started on 
 MarioAnimationFrame: .res 1   ; Tells us which frame he is on\
 MarioAnimationStates: .res 1  ; Tells us what he is doing
 
@@ -43,13 +43,6 @@ XPos:           .res 2       ; Player X 16-bit position (8.8 fixed-point): hi+lo
 XVel:           .res 2       ; Player X (signed) velocity (in pixels per 256 frames)
 
 BufPtr:         .res 2       ; Pointer to the buffer address - 16bits (lo,hi)
-
-MenuItem:       .res 1       ; Keep track of the menu item that is selected
-
-PlayerOneLives: .res 1       ; Lives for Mario
-
-Score:          .res 4       ; Score (1s, 10s, 100s, and 1000s digits in decimal)
-
 
 
 YVel:           .res 2       ; Player Y (signed) velocity (in pixels per 256 frames)
@@ -87,8 +80,9 @@ CurrentGameState:      .res 1       ; Keep track of game state
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 .segment "RAM"
 Clock60:        .res 1       ; Counter that increments per second (60 frames)
-
-Seed:           .res 2       ; Initialize 16-bit seed to any value except 0
+PlayerOneLives: .res 1       ; Lives for Mario
+Score:          .res 4       ; Score (1s, 10s, 100s, and 1000s digits in decimal)
+MenuItem:       .res 1       ; Keep track of the menu item that is selected
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -255,76 +249,161 @@ Seed:           .res 2       ; Initialize 16-bit seed to any value except 0
         ; Mario running right is 2
         cmp #MarioAnimations::RUNNING_RIGHT
         bne EndOfRunningRight
-            RunningRightLoop:
+            .proc RunningRightAnimation
+                RunningRightLoop:
 
-                ; Determine if we should increment the mario animation frame
-                lda MarioAnimationFrameCountdown            
-               
-                ; If A > value -> carry is set, if  A < value -> carry is cleared
-                bne DetermineSprite    ; If marioAnimationFrame is not equal to 0, then we don't need to change the sprite
-                    ; Update Frame
-                    lda MarioAnimationFrame
-                    clc
-                    adc #1
-                    cmp #3
-                    bne :+
-                        ; if equal to 3, then just put it back to 0 again
-                        lda #0
-                    :
-                    sta MarioAnimationFrame
-
-                    lda #FRAMES_PER_ANIMATION            ; Reload the 33 frames
-                    sta MarioAnimationFrameCountdown
-                DetermineSprite:
-
-                lda MarioAnimationFrame
-                bne Not0                ; If its not 0 frame,
-                    ; Based on the animation number we'll jump to a different memory in ROM 
-                    lda RunningRight0,x
-                    jmp Not2
-            Not0:
-                cmp #1
-                bne Not1
-                    lda RunningRight1,x
-                    jmp Not2
-
-            Not1:
-                cmp #2
-                bne Not2    
-                    lda RunningRight2,x
-            Not2:
-            ; Is3:
-            ;     lda Running3,x
-            ; End3:
-                ; Get the param tile number
-                sta ParamTileNum
+                    ; Determine if we should increment the mario animation frame
+                    lda MarioAnimationFrameCountdown            
                 
-                jsr SpritePlacement
+                    ; If A > value -> carry is set, if  A < value -> carry is cleared
+                    bne DetermineSprite    ; If marioAnimationFrame is not equal to 0, then we don't need to change the sprite
+                        ; Update Frame
+                        lda MarioAnimationFrame
+                        clc
+                        adc #1
+                        cmp #3
+                        bne :+
+                            ; if equal to 3, then just put it back to 0 again
+                            lda #0
+                        :
+                        sta MarioAnimationFrame
 
-                inx         ; go to the attribute now
+                        lda #FRAMES_PER_ANIMATION            ; Reload the 33 frames
+                        sta MarioAnimationFrameCountdown
+                    DetermineSprite:
 
-                lda MarioAnimationFrame
-                bne Not0Attribute
-                    lda RunningRight0,x
-                Not0Attribute:
+                    lda MarioAnimationFrame
+                    bne Not0                ; If its not 0 frame,
+                        ; Based on the animation number we'll jump to a different memory in ROM 
+                        lda RunningRight0,x
+                        jmp Not2
+                    Not0:
+                        cmp #1
+                        bne Not1
+                            lda RunningRight1,x
+                            jmp Not2
 
-                sta ParamAttribs
-                    
-                lda #1
-                sta ParamNumTiles
+                    Not1:
+                        cmp #2
+                        bne Not2    
+                            lda RunningRight2,x
+                    Not2:
+                        sta ParamTileNum
+                        
+                        jsr SpritePlacement
 
-                jsr DrawSprite
+                        inx         ; go to the attribute now
 
+                        ; Let's determine the attribute
+                        lda MarioAnimationFrame
+                        bne Not0Attribute
+                            lda RunningRight0,x
+                    Not0Attribute:
+                        cmp #1
+                        bne Not1Attribute
+                            lda RunningRight1,x
+                    Not1Attribute:
+                        cmp #2
+                        bne Not2Attribute
+                            lda RunningRight2,x
+                    Not2Attribute:
+            
+                    sta ParamAttribs
+                        
+                    lda #1
+                    sta ParamNumTiles
 
-                inx
-                cpx #8
-                bcc RunningRightLoop
+                    jsr DrawSprite
 
+                    inx
+                    cpx #8
+                    bcc RunningRightLoop
 
-        EndOfRunningRightLoop:
-    
+                EndOfRunningRightLoop:
+            .endproc
 
         EndOfRunningRight:
+
+        ; Mario running left is 3
+        cmp #MarioAnimations::RUNNING_LEFT
+        bne EndOfRunningLeft
+            .proc RunningLeftAnimation
+                Loop:
+
+                    ; Determine if we should increment the mario animation frame
+                    lda MarioAnimationFrameCountdown            
+                
+                    ; If A > value -> carry is set, if  A < value -> carry is cleared
+                    bne DetermineSprite    ; If marioAnimationFrame is not equal to 0, then we don't need to change the sprite
+                        ; Update Frame
+                        lda MarioAnimationFrame
+                        clc
+                        adc #1
+                        cmp #3
+                        bne :+
+                            ; if equal to 3, then just put it back to 0 again
+                            lda #0
+                        :
+                        sta MarioAnimationFrame
+
+                        lda #FRAMES_PER_ANIMATION            ; Reload the 33 frames
+                        sta MarioAnimationFrameCountdown
+                    DetermineSprite:
+
+                    lda MarioAnimationFrame
+                    bne Not0                ; If its not 0 frame,
+                        ; Based on the animation number we'll jump to a different memory in ROM 
+                        lda RunningLeft0,x
+                        jmp Not2
+                    Not0:
+                        cmp #1
+                        bne Not1
+                            lda RunningLeft1,x
+                            jmp Not2
+
+                    Not1:
+                        cmp #2
+                        bne Not2    
+                            lda RunningLeft2,x
+                    Not2:
+                        sta ParamTileNum
+                        
+                        jsr SpritePlacement
+
+                        inx         ; go to the attribute now
+
+                        ; Let's determine the attribute
+                        lda MarioAnimationFrame
+                        bne Not0Attribute
+                            lda RunningLeft0,x
+                    Not0Attribute:
+                        cmp #1
+                        bne Not1Attribute
+                            lda RunningLeft1,x
+                    Not1Attribute:
+                        cmp #2
+                        bne Not2Attribute
+                            lda RunningLeft2,x
+                    Not2Attribute:
+            
+                    sta ParamAttribs
+                        
+                    lda #1
+                    sta ParamNumTiles
+
+                    jsr DrawSprite
+
+                    inx
+                    cpx #8
+                    bcc Loop
+
+                EndOfRunningLeftLoop:
+            .endproc
+
+        EndOfRunningLeft:
+        
+        
+        ; This should always be at the end of the mario animations and should always be hit.
         pla                     ; pull old x off accumulator
         tax                     ; transfer it to the X Register
         jmp NextActor
@@ -797,7 +876,11 @@ NMI:
     lda MarioAnimationStates
     cmp #1                      ; If equal to or less than 1, he must be standing left or right 
     bcc :+                      ; If carry clear, then it means accumulator is one of those so just skip
-        dec MarioAnimationFrameCountdown    ; Decrement the countdown by 1
+        ; Also let's take into account a weird edge case:
+        ; if MarioAnimationFrameCountdown is already 0, just skip
+        lda MarioAnimationFrameCountdown
+        beq :+
+            dec MarioAnimationFrameCountdown    ; Decrement the countdown by 1
     :
 
 
@@ -882,6 +965,59 @@ StandingLeft0:
         .byte $4F                      ; index 6 - This is just flipped
         .byte %01000000
 .endproc
+
+RunningLeft0:
+.proc RunningLeft0Scope
+    TopLeft:
+        .byte $33                   ; Sprite tile
+        .byte %01000000
+    TopRight:
+        .byte $32
+        .byte %01000000
+    BottomLeft:
+        .byte $3C
+        .byte %01000000
+    BottomRight:
+        .byte $3B
+        .byte %01000000
+.endproc
+
+RunningLeft1:
+.proc RunningLeft1Scope
+    TopLeft:
+        .byte $33                       ; index 2 - Sprite Tile #
+        .byte %01000000
+    TopRight:
+        .byte $32                       ; Sprite Tile #
+        .byte %01000000
+
+    BottomLeft:
+        .byte $39                      ; index 6 
+        .byte %01000000
+    BottomRight:
+        .byte $38                       ; index 4
+        .byte %01000000
+
+.endproc
+
+RunningLeft2:
+.proc RunningLeft2Scope
+    TopLeft:
+        .byte $33                       ; index 2 - Sprite Tile #
+        .byte %01000000
+    TopRight:
+        .byte $32                       ; Sprite Tile #
+        .byte %01000000
+    BottomLeft:
+        .byte $35                      ; index 6 
+        .byte %01000000
+    BottomRight:
+        .byte $34                       ; index 4
+        .byte %01000000
+
+.endproc
+
+
 
 RunningRight0:
 .proc RunningRight0Scope
