@@ -7,9 +7,11 @@
 .include "./datatypes/marioAnimations.inc"
 
 .segment "ZEROPAGE"
-ActorsArray:    .res MAX_ACTORS * .sizeof(Actor)
 
+MarioAnimationFrameCountdown: .res 2 ; Holds the frame that this has started on 
+MarioAnimationFrame: .res 1   ; Tells us which frame he is on\
 MarioAnimationStates: .res 1  ; Tells us what he is doing
+
 
 SprPtr:         .res 2       ; Pointer to the sprite address in OAM RAM - 16bits (lo,hi)   Is used in RenderingActors and in selecting proper animation frame!
 RomSprPtr:      .res 2       ; Pointer to the ROM sprite address
@@ -32,7 +34,7 @@ ParamRectY1:    .res 1       ; Used as parameter to subroutine
 ParamRectX2:    .res 1       ; Used as parameter to subroutine
 ParamRectY2:    .res 1       ; Used as parameter to subroutine
 
-
+ActorsArray:    .res MAX_ACTORS * .sizeof(Actor)
 CollidablesArray:    .res MAX_COLLIDABLES * .sizeof(Collidable)
 
 
@@ -45,7 +47,6 @@ BufPtr:         .res 2       ; Pointer to the buffer address - 16bits (lo,hi)
 MenuItem:       .res 1       ; Keep track of the menu item that is selected
 
 PlayerOneLives: .res 1       ; Lives for Mario
-MarioAttributes: .res 1       ; Hold the attributes for mario: at start %00000000 [flip vert] [flip hor] [priority: 0 in front, 1 behind background] [?] [?] [?] [colorpalette][colorpalette aswell]
 
 Score:          .res 4       ; Score (1s, 10s, 100s, and 1000s digits in decimal)
 
@@ -56,7 +57,6 @@ YVel:           .res 2       ; Player Y (signed) velocity (in pixels per 256 fra
 
 Frame:          .res 1       ; Counts frames (0 to 255 and repeats)
 IsDrawComplete: .res 1       ; Flag to indicate when VBlank is done drawing
-Clock60:        .res 1       ; Counter that increments per second (60 frames)
 WaitUntilVar:    .res 1       ; Use this to compare against the Clock60
 
 BgPtr:          .res 2       ; Pointer to background address - 16bits (lo,hi)
@@ -80,15 +80,67 @@ ParamHiByte:     .res 1       ; Used as parameter to subroutine
 
 PrevOAMCount:   .res 1       ; Store the previous number of bytes that were sent to the OAM
 
-Seed:           .res 2       ; Initialize 16-bit seed to any value except 0
-
 CurrentGameState:      .res 1       ; Keep track of game state
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; RAM located at $0300 until $0800
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+.segment "RAM"
+Clock60:        .res 1       ; Counter that increments per second (60 frames)
+
+Seed:           .res 2       ; Initialize 16-bit seed to any value except 0
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; PRG-ROM code located at $8000
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 .segment "CODE"
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Subroutine to manipulate the pixel placements for all the sprites properly
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+.proc SpritePlacement
+    ; If x equals 2, then it we need to add 8 to the x parameter
+    cpx #2
+    ; If it doesn't equal 2 skip ahead
+    bne :+
+        lda ParamXPos
+        ; If it does, then add it to  the parameter
+        clc 
+        adc #8
+        sta ParamXPos
+    :
+
+    ; lda ActorsArray+Actor::YPos,x
+    ; If y equals 4, then it must be bottom left
+    cpx #4
+    bne :+
+        ; Undo param x addition
+        lda ParamXPos
+        sec
+        sbc #8
+        sta ParamXPos
+
+        lda ParamYPos
+        clc 
+        adc #8
+        sta ParamYPos
+    :
+
+    
+    ; If x equals 6, then it's the bottom right and we should add 8 to x again.
+    ; Y param ALREADY has 8 added
+    cpx #6
+    bne :+
+        lda ParamXPos
+        ; If it does, then add it to  the parameter
+        clc 
+        adc #8
+        sta ParamXPos
+    :
+    rts
+.endproc
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Subroutine to loop all actors and send their tiles to the OAM-RAM at $200
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -120,7 +172,10 @@ CurrentGameState:      .res 1       ; Keep track of game state
       :
       ; Let's get mario
       cmp #ActorType::PLAYER
-      bne EndOfPlayer
+      beq :+
+        jmp EndOfPlayer     ; branch not good enough to jump that far, so 
+                            ; it really means: if branch not equal then go to end of player
+      :
 
         ; Push the X Position into the variable first, add the offsets later
         lda ActorsArray+Actor::XPos,x
@@ -135,75 +190,141 @@ CurrentGameState:      .res 1       ; Keep track of game state
         pha                     ; push onto stack
 
         ldx #0                  ; Set this counter to 0 to go through mario's tiles
-
         ; Get mario's state, then render based on the state
         lda MarioAnimationStates
         bne EndOfStandingRight                        ; If its not 0, jump to next check
+            .proc StandingRightAnimation
+            ; 0 is for STANDING_RIGHT
+            ; This will load from top to bottom, left first then to right: TopLeft, TopRight, BottomLeft, BottomRIght
+            Loop:
+                lda StandingRight0,x     ; Get tile then attribute
+                sta ParamTileNum        ; Tile Num
 
 
-          ; 0 is for STANDING_RIGHT
-          ; This will load from top to bottom, left first then to right: TopLeft, TopRight, BottomLeft, BottomRIght
-          Loop:
-            lda Standing0,x     ; Get tile then attribute
-            sta ParamTileNum        ; Tile Num
+                jsr SpritePlacement
+                
+                inx                     ; Go to attribute and increement
+                
+                lda StandingRight0,x     ; attribute
+                sta ParamAttribs
 
-            ; lda ActorsArray+Actor::XPos,x
-            ; If x equals 2, then it we need to add 8 to the x parameter
-            cpx #2
-            ; If it doesn't equal 2 skip ahead
-            bne :+
-              lda ParamXPos
-              ; If it does, then add it to  the parameter
-              clc 
-              adc #8
-              sta ParamXPos
-            :
+                lda #1
+                sta ParamNumTiles
 
-            ; lda ActorsArray+Actor::YPos,x
-            ; If y equals 4, then it must be bottom left
-            cpx #4
-            bne :+
-                ; Undo param x addition
-                lda ParamXPos
-                sec
-                sbc #8
-                sta ParamXPos
+                jsr DrawSprite
 
-                lda ParamYPos
-                clc 
-                adc #8
-                sta ParamYPos
-            :
-
-            
-            ; If x equals 6, then it's the bottom right and we should add 8 to x again.
-            ; Y param ALREADY has 8 added
-            cpx #6
-            bne :+
-                lda ParamXPos
-                ; If it does, then add it to  the parameter
-                clc 
-                adc #8
-                sta ParamXPos
-            :
-     
-            inx                     ; Go to attribute and increement
-            
-            lda Standing0,x     ; attribute
-            sta ParamAttribs
-
-            lda #1
-            sta ParamNumTiles
-
-            jsr DrawSprite
-
-            inx
-            cpx #8
-            bcc Loop
-             
-          EndLoop:
-
+                inx
+                cpx #8
+                bcc Loop
+                
+            EndLoop:
+          .endproc
         EndOfStandingRight:
+
+        cmp #MarioAnimations::STANDING_LEFT
+        bne EndOfStandingLeft
+            .proc StandingLeftAnimation
+                ; 0 is for STANDING_RIGHT
+                ; This will load from top to bottom, left first then to right: TopLeft, TopRight, BottomLeft, BottomRIght
+                Loop:
+                    lda StandingLeft0,x     ; Get tile then attribute
+                    sta ParamTileNum        ; Tile Num
+
+
+                    jsr SpritePlacement
+                    
+                    inx                     ; Go to attribute and increement
+                    
+                    lda StandingLeft0,x     ; attribute
+                    sta ParamAttribs
+
+                    lda #1
+                    sta ParamNumTiles
+
+                    jsr DrawSprite
+
+                    inx
+                    cpx #8
+                    bcc Loop
+                    
+                EndLoop:
+            .endproc
+
+        EndOfStandingLeft:
+        
+        ; Mario running right is 2
+        cmp #MarioAnimations::RUNNING_RIGHT
+        bne EndOfRunningRight
+            RunningRightLoop:
+
+                ; Determine if we should increment the mario animation frame
+                lda MarioAnimationFrameCountdown            
+               
+                ; If A > value -> carry is set, if  A < value -> carry is cleared
+                bne DetermineSprite    ; If marioAnimationFrame is not equal to 0, then we don't need to change the sprite
+                    ; Update Frame
+                    lda MarioAnimationFrame
+                    clc
+                    adc #1
+                    cmp #3
+                    bne :+
+                        ; if equal to 3, then just put it back to 0 again
+                        lda #0
+                    :
+                    sta MarioAnimationFrame
+
+                    lda #FRAMES_PER_ANIMATION            ; Reload the 33 frames
+                    sta MarioAnimationFrameCountdown
+                DetermineSprite:
+
+                lda MarioAnimationFrame
+                bne Not0                ; If its not 0 frame,
+                    ; Based on the animation number we'll jump to a different memory in ROM 
+                    lda RunningRight0,x
+                    jmp Not2
+            Not0:
+                cmp #1
+                bne Not1
+                    lda RunningRight1,x
+                    jmp Not2
+
+            Not1:
+                cmp #2
+                bne Not2    
+                    lda RunningRight2,x
+            Not2:
+            ; Is3:
+            ;     lda Running3,x
+            ; End3:
+                ; Get the param tile number
+                sta ParamTileNum
+                
+                jsr SpritePlacement
+
+                inx         ; go to the attribute now
+
+                lda MarioAnimationFrame
+                bne Not0Attribute
+                    lda RunningRight0,x
+                Not0Attribute:
+
+                sta ParamAttribs
+                    
+                lda #1
+                sta ParamNumTiles
+
+                jsr DrawSprite
+
+
+                inx
+                cpx #8
+                bcc RunningRightLoop
+
+
+        EndOfRunningRightLoop:
+    
+
+        EndOfRunningRight:
         pla                     ; pull old x off accumulator
         tax                     ; transfer it to the X Register
         jmp NextActor
@@ -672,6 +793,14 @@ NMI:
     jsr BackgroundCopy
 
 
+    ; If Mario is animating, then let's decrement the animation frame countdown
+    lda MarioAnimationStates
+    cmp #1                      ; If equal to or less than 1, he must be standing left or right 
+    bcc :+                      ; If carry clear, then it means accumulator is one of those so just skip
+        dec MarioAnimationFrameCountdown    ; Decrement the countdown by 1
+    :
+
+
     ; Reset collision
     ; lda #0
     ; sta Collision
@@ -721,20 +850,88 @@ IRQ:
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Mario Animation Frames - Action - Frame
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-Standing0:
+StandingRight0:
+.proc StandingRight0Scope
     TopLeft:
         .byte $32                       ; Sprite Tile #
         .byte %00000000
     TopRight:
         .byte $33                       ; index 2 - Sprite Tile #
         .byte %00000000
-
     BottomLeft:
         .byte $4F                       ; index 4
         .byte %00000000
     BottomRight:
         .byte $4F                      ; index 6 - This is just flipped
         .byte %01000000
+.endproc
+
+
+StandingLeft0:
+.proc StandingLeft0Scope
+    TopLeft:
+        .byte $33                       ; index 2 - Sprite Tile #
+        .byte %01000000
+    TopRight:
+        .byte $32                       ; Sprite Tile #
+        .byte %01000000
+    BottomLeft:
+        .byte $4F                       ; index 4
+        .byte %00000000
+    BottomRight:
+        .byte $4F                      ; index 6 - This is just flipped
+        .byte %01000000
+.endproc
+
+RunningRight0:
+.proc RunningRight0Scope
+    TopLeft:
+        .byte $32                       ; Sprite Tile #
+        .byte %00000000
+    TopRight:
+        .byte $33                       ; index 2 - Sprite Tile #
+        .byte %00000000
+    BottomLeft:
+        .byte $3B                       ; index 4
+        .byte %00000000
+    BottomRight:
+        .byte $3C                      ; index 6 
+        .byte %00000000
+.endproc
+
+RunningRight1:
+.proc Running1Scope
+    TopLeft:
+        .byte $32                       ; Sprite Tile #
+        .byte %00000000
+    TopRight:
+        .byte $33                       ; index 2 - Sprite Tile #
+        .byte %00000000
+    BottomLeft:
+        .byte $38                       ; index 4
+        .byte %00000000
+    BottomRight:
+        .byte $39                      ; index 6 
+        .byte %00000000
+.endproc
+RunningRight2:
+.proc Running2Scope
+    TopLeft:
+        .byte $32                       ; Sprite Tile #
+        .byte %00000000
+    TopRight:
+        .byte $33                       ; index 2 - Sprite Tile #
+        .byte %00000000
+    BottomLeft:
+        .byte $34                       ; index 4
+        .byte %00000000
+    BottomRight:
+        .byte $35                      ; index 6 
+        .byte %00000000
+.endproc
+
+
+; Running3:
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Hardcoded list of color values in ROM to be loaded by the PPU
