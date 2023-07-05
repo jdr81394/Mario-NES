@@ -21,9 +21,9 @@
     lda ParamType                     ; Fetch parameter "actor type" from RAM
     sta ActorsArray+Actor::Type,x
     lda ParamXPos                     ; Fetch parameter "actor position X" from RAM
-    sta ActorsArray+Actor::XPos,x
+    sta ActorsArray+Actor::XPos+1,x
     lda ParamYPos                     ; Fetch parameter "actor position Y" from RAM
-    sta ActorsArray+Actor::YPos,x
+    sta ActorsArray+Actor::YPos+1,x
 EndRoutine:
     rts
 .endproc

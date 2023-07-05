@@ -17,8 +17,8 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 .struct Actor
     Type .byte
-    XPos .res 3
-    YPos .res 3
+    XPos .res 2
+    YPos .res 2
 .endstruct
 
 

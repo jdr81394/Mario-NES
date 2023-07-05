@@ -8,6 +8,13 @@
 
 .segment "ZEROPAGE"
 
+YVel:           .res 2       ; Player Y (signed) velocity (in pixels per 256 frames)
+
+XPos:           .res 2       ; Player X 16-bit position (8.8 fixed-point): hi+lo/256px
+XVel:           .res 2       ; Player X (signed) velocity (in pixels per 256 frames)
+HorizontalFlag:  .res 1       ; Determines if player has positive or negative velocity, if greatest bit is 1, then negative, if 1 then positive, if 0, then neutral
+VerticalFlag:    .res 1       ; Determines if the player has positive or negative velocity, if its greatest bit is 1, then mario is up and its negative, if 1 and its positive marios is going down. 0 is neutral
+
 MarioAnimationFrameCountdown: .res 1 ; Holds the frame that this has started on 
 MarioAnimationFrame: .res 1   ; Tells us which frame he is on\
 MarioAnimationStates: .res 1  ; Tells us what he is doing
@@ -21,7 +28,7 @@ Collision:      .res 1       ; Flag if a collision happened or not
 Buttons:        .res 1       ; Pressed buttons (A|B|Sel|Start|Up|Dwn|Lft|Rgt)
 PrevButtons:    .res 1       ; Stores the previous buttons from the last frame
 
-YPos:           .res 3       ; Player Y 16-bit position (8.8 fixed-point): hi+lo/256px
+YPos:           .res 2       ; Player Y 16-bit position (8.8 fixed-point): hi+lo/256px
 
 VarX:           .res 1      
 VarY:           .res 1
@@ -39,13 +46,10 @@ CollidablesArray:    .res MAX_COLLIDABLES * .sizeof(Collidable)
 
 
 
-XPos:           .res 3       ; Player X 16-bit position (8.8 fixed-point): hi+lo/256px
-XVel:           .res 2       ; Player X (signed) velocity (in pixels per 256 frames)
 
 BufPtr:         .res 2       ; Pointer to the buffer address - 16bits (lo,hi)
 
 
-YVel:           .res 2       ; Player Y (signed) velocity (in pixels per 256 frames)
 
 
 Frame:          .res 1       ; Counts frames (0 to 255 and repeats)

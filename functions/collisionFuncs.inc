@@ -7,16 +7,31 @@
     lda ActorsArray+Actor::Type,x
     cmp #ActorType::PLAYER
     bne NextActor
-      ; jmp Reset
-      lda YVel
+      ; If vertical flag is equal to 0, then just jump to next actor
+      lda VerticalFlag
+      beq NextActor
+      ; If it is positive, meaning going down, skip
       bpl :+
+        ; if it is negative, meaning mario has upwards velocity, handle it here
         dec YPos+1            ; sign extension
+        ; do stuff Jake todo
       :
-      clc
-      adc #GRAVITY_CONSTANT                  ; this is gravity for a second
-      clc
+      bmi :++
+        lda YVel
+        clc
+        adc #GRAVITY_CONSTANT                  ; this is gravity for a second
+        
+        ; If YVel + Gravity Constant overflowed from 255 -> 0, then a carry would be present and we can just set to max velocity
+        bcc :+
+          ; Overflow occured so:
+          lda #MAX_VEL
+        
+      :
+
+      ; If YVel is greater than the max velocity, then load the max velocity instead so we can clamp it
       cmp #MAX_VEL
       bcc :+
+        ; YVel was greater so were in here now
         lda #MAX_VEL
       :
       sta YVel
@@ -67,6 +82,7 @@
 
         jsr DidUnderCollisionOccur     ; Proceed to test if point is inside bounding box
 
+        ; Collision is really under collision
         lda Collision
         beq NextCollidable                    ; If no collision, don't do anything
 
@@ -220,7 +236,7 @@ EndRoutine:
     ; If there is a brick, that is 30, above it that means it is directly above and we do not need to add it
     ; TODO Also we will need to exclude if it is in the attribute table.. we'll handle that in a bit
     
-    ; Possible collidables: $47
+    ; Possible collidables: $45, $47
     DetermineIfCollidable:
         ; Accumulator has the value to compare, it is already in the accumulator
         ; Is it a block we want? Yes

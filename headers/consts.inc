@@ -45,8 +45,8 @@ NAME_TABLE_1 = $2400
 ;; Gravity Physics
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 GRAVITY_CONSTANT = 120;
-ACCEL = 40;
-MAX_VEL = 127;
+ACCEL = 5;
+MAX_VEL = 245;                  ; BREAK MUST ALWAYS BE ABLE TO 0 OUT MAX VEL
 BRAKE = 5
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;

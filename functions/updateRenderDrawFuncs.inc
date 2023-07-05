@@ -9,14 +9,22 @@
 
       cmp #ActorType::PLAYER
       bne FinishActor
-        lda XVel
+       
+        lda HorizontalFlag
         bpl :+
           dec XPos+1                        ; This does a sign extension to keep it either +/-
+          lda XPos
+          sec
+          sbc XVel
         :
-        ; Lets double the velocity to make it quicker
+        ; if it is positive, then go into this conditional logic
+        bmi :+
+          ; Lets load the velocity
+          lda XPos
+          clc
+          adc XVel
+        :
 
-        clc
-        adc XPos
         
         sta ActorsArray+Actor::XPos,x       ; Store into the actors array so it can be rendered   
         sta XPos
@@ -24,24 +32,26 @@
         adc XPos+1
         sta XPos+1
         sta ActorsArray+Actor::XPos+1,x
+        sta ParamXPos       ; this will be used for the SetupCollision check
 
-      SetupStack:
-        txa       ; transfer x to a
-        pha       ; push to stack
 
-        jsr CheckCollidableCollision
 
-        pla      ; pull old x off stack
-        tax      ; push it back onto x
-        
-        lda Collision
-        ; If collision, then collision will not be equal to 0, and we want to use this value, so jump to sta, 
-        
-        bne :+
+      HandleVertical:
+        lda Collision     ; if collision, collision will hold some value that is != 0
+        bne :++
+          ; In here it is equal to 0, therefore no collision
+          ; JAKE TODO REMOVE, we are going to say if vertical flag is negative then skip, we will only make the vertical flag positive, when the vertical flag hits 0
+          lda VerticalFlag
+          bmi :+
+            lda #1
+            sta VerticalFlag
+          :
+
           lda YPos
           clc
           adc YVel
         :
+        
 
         sta ActorsArray+Actor::YPos,x
         sta YPos
@@ -49,8 +59,24 @@
         adc YPos+1
         sta YPos+1
         sta ActorsArray+Actor::YPos+1,x
+        sta ParamYPos     ; this will be used for the SetupCollision check
 
+        lda Collision
+        beq :+
+          ; if it is not equal to 0, meaning there is a collision, then set vertical flag
+          lda #0
+          sta VerticalFlag
+        :
 
+        SetupCollisionCheck:
+          txa       ; transfer x to a
+          pha       ; push to stack
+
+          jsr CheckCollidableCollision
+
+          pla      ; pull old x off stack
+          tax      ; push it back onto x
+          
 
         jmp NextActor
       FinishActor:
