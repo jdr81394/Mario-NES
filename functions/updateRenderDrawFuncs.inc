@@ -13,8 +13,11 @@
         bpl :+
           dec XPos+1                        ; This does a sign extension to keep it either +/-
         :
+        ; Lets double the velocity to make it quicker
+
         clc
         adc XPos
+        
         sta ActorsArray+Actor::XPos,x       ; Store into the actors array so it can be rendered   
         sta XPos
         lda #0
@@ -22,7 +25,7 @@
         sta XPos+1
         sta ActorsArray+Actor::XPos+1,x
 
-
+      SetupStack:
         txa       ; transfer x to a
         pha       ; push to stack
 

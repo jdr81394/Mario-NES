@@ -21,7 +21,7 @@ Collision:      .res 1       ; Flag if a collision happened or not
 Buttons:        .res 1       ; Pressed buttons (A|B|Sel|Start|Up|Dwn|Lft|Rgt)
 PrevButtons:    .res 1       ; Stores the previous buttons from the last frame
 
-YPos:           .res 2       ; Player Y 16-bit position (8.8 fixed-point): hi+lo/256px
+YPos:           .res 3       ; Player Y 16-bit position (8.8 fixed-point): hi+lo/256px
 
 VarX:           .res 1      
 VarY:           .res 1
@@ -39,7 +39,7 @@ CollidablesArray:    .res MAX_COLLIDABLES * .sizeof(Collidable)
 
 
 
-XPos:           .res 2       ; Player X 16-bit position (8.8 fixed-point): hi+lo/256px
+XPos:           .res 3       ; Player X 16-bit position (8.8 fixed-point): hi+lo/256px
 XVel:           .res 2       ; Player X (signed) velocity (in pixels per 256 frames)
 
 BufPtr:         .res 2       ; Pointer to the buffer address - 16bits (lo,hi)
@@ -172,10 +172,10 @@ MenuItem:       .res 1       ; Keep track of the menu item that is selected
       :
 
         ; Push the X Position into the variable first, add the offsets later
-        lda ActorsArray+Actor::XPos,x
+        lda ActorsArray+Actor::XPos+1,x
         sta ParamXPos
 
-        lda ActorsArray+Actor::YPos,x
+        lda ActorsArray+Actor::YPos+1,x
         sta ParamYPos       ; Store the parameter Y
 
         
@@ -819,10 +819,10 @@ Main:
             sta ParamType
             lda #50                 ; x
             sta ParamXPos           
-            sta XPos
+            sta XPos+1
             lda #10
             sta ParamYPos           ; y 
-            sta YPos
+            sta YPos+1
             jsr AddNewActor
 
         

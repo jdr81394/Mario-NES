@@ -76,7 +76,7 @@ LoopButtons:
               sta MarioAnimationStates
             :
 
-            lda XPos
+            lda XPos+1
             cmp #10
             bcc NotLeft             ; if XPos is equal to 10, we want to branch it because it shouldn't be less than 0! 
                 lda XVel
@@ -124,7 +124,7 @@ LoopButtons:
             sta MarioAnimationStates
           :
 
-        lda XPos
+        lda XPos+1
         cmp #200              ; if XPos is equal or greater, than move on because we do not want to go further than 140 pixels on screen
         bcs MoveScreenRight   ; The carry will be set if the accumulator is greater, since a subtraction was never need to be made from the accumulator
           lda XVel            ; If Velocity isn't greater than Max Velocity
