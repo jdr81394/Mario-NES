@@ -28,7 +28,18 @@ LoopButtons:
     CheckNoButtons:
       lda Buttons
       bne EndNoButtons
+        ; Let's make sure mario is not in the air
+        lda MarioAnimationStates
+        cmp MarioAnimations::JUMPING_RIGHT
+        bcs CheckCollision
 
+        ; The above and below ensure that its between 4 and 7
+
+        lda MarioAnimationStates
+        cmp MarioAnimations::DEATH
+        bcc CheckCollision      
+
+        SetToStanding:
         ; Let's set the animation time to zero
         lda #0
         sta MarioAnimationFrameCountdown
@@ -45,6 +56,11 @@ LoopButtons:
           lda #MarioAnimations::STANDING_LEFT
         StoreMarioAnimation:
         sta MarioAnimationStates
+        jmp EndNoButtons
+
+        CheckCollision:
+          lda Collision
+          bne SetToStanding     ; If its not 0, means theres a collision then jump back up and set animation
 
     EndNoButtons:
     CheckAButton:
@@ -56,6 +72,7 @@ LoopButtons:
           lda Collision
           beq EndOfAButtonCollisionCheck
             ; If the value is NOT zero, meaning there is an under collision, then lets jump
+
 
             ; Let's set state of Mario jumping, first lets get his direction
             lda MarioAnimationStates
@@ -109,13 +126,9 @@ LoopButtons:
 
             ; ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
             ; The above comparisons ensure it is either 4 or 5
-
-            lda YVel
-            clc
-            adc #INITIAL_TAKEOFF
+            lda #INITIAL_TAKEOFF
             sta YVel
-            lda #0
-            adc YVel+1
+            sta YVel+1
           PeakJumpAlreadyReached:
 
     EndAButton:
@@ -123,11 +136,25 @@ LoopButtons:
         lda Buttons
         and #BUTTON_LEFT
         beq NotLeft
-          ; Check to see if mario was already running left first to restart animation
+
+          ; However if mario is in air we do not need to set this up so lets check
+          ; Let's make sure mario is not in the air
           lda MarioAnimationStates
+          cmp #MarioAnimations::JUMPING_RIGHT
+          bcc :+
+
+          ; The above and below ensure that its between 4 and 7
+          cmp #MarioAnimations::DEATH
+          bcs :+
+            ; The above 2 conditions passed meaning mario is in the air
+            bcc EndOfSetUpAnimation      
+          :
+
+          ; Check to see if mario was already running left first to restart animation
           cmp #MarioAnimations::RUNNING_LEFT
           ; If equals, then it already was running left and we don't need to start the animation timer
-          beq :+
+          beq EndOfSetUpAnimation
+
             ; Set animation start time
             lda #FRAMES_PER_ANIMATION                 ; Each movement can be 33 frames
             sta MarioAnimationFrameCountdown
@@ -135,7 +162,7 @@ LoopButtons:
             ; Set mario to running left
             lda #MarioAnimations::RUNNING_LEFT
             sta MarioAnimationStates
-          :
+          EndOfSetUpAnimation:
 
           ; We load th velocity to check if its 0. If it is 0, then that mean mario's break has brough any previous acceleration down to 0, and we can therefore have mario 
           ; begin to accelerate in the other direction
@@ -211,11 +238,24 @@ LoopButtons:
       and #BUTTON_RIGHT
       beq NotRight
 
-        ; Check to see if mario was already running right first to restart animation
+        ;   However if mario is in air we do not need to set this up so lets check
+        ; Let's make sure mario is not in the air
         lda MarioAnimationStates
+        cmp #MarioAnimations::JUMPING_RIGHT
+        bcc :+
+
+        ; The above and below ensure that its between 4 and 7
+        cmp #MarioAnimations::DEATH
+        bcs :+
+          ; The above 2 conditions passed meaning mario is in the air
+          bcc EndOfSetUpAnimationRight      
+        :
+
+        ; Check to see if mario was already running right first to restart animation
         cmp #MarioAnimations::RUNNING_RIGHT
         ; If equals, then it already was running right and we don't need to start the animation timer
-        beq :+
+        beq EndOfSetUpAnimationRight
+
           ; Set animation start time
           lda #FRAMES_PER_ANIMATION                 ; Each movement can be 33 frames
           sta MarioAnimationFrameCountdown
@@ -223,7 +263,9 @@ LoopButtons:
           ; Set mario to running left
           lda #MarioAnimations::RUNNING_RIGHT
           sta MarioAnimationStates
-        :
+
+
+        EndOfSetUpAnimationRight:
 
         ; We load the velocity to check if its 0. If it is 0, then that mean mario's break has brought any previous acceleration down to 0, and we can therefore have mario 
         ; begin to accelerate in the other direction

@@ -7,4 +7,5 @@
     JUMPING_LEFT = 5   ; [][][][] [][1][0][1]
     FALLING_RIGHT = 6  ; [][][][] [][1][1][0]
     FALLING_LEFT = 7   ; [][][][] [][1][1][1]
+    DEATH = 8
 .endenum

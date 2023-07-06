@@ -45,8 +45,7 @@
         bne :+          ; If not equal, then not falling right
                 ; Do stuff here for falling left
         :
-        ; lda MarioPeakJumpFrameCountdown
-        ; bne AfterFrameCountdown             ; If not equal to 0, just skip
+
           ; If vertical flag is positive: 
           lda YVel
           clc

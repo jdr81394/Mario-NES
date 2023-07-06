@@ -44,12 +44,12 @@ NAME_TABLE_1 = $2400
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Gravity Physics
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-GRAVITY_CONSTANT = 10;
+GRAVITY_CONSTANT = 250;
 ACCEL = 5;
 MAX_VEL = 245;                  ; BREAK MUST ALWAYS BE ABLE TO 0 OUT MAX VEL
 BRAKE = 5
 INITIAL_TAKEOFF = 254;
-INITIAL_TAKEOFF_FRICTION = 2
+INITIAL_TAKEOFF_FRICTION = 10
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Animation constants
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;

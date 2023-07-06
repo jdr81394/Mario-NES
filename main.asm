@@ -7,12 +7,15 @@
 .include "./datatypes/marioAnimations.inc"
 
 .segment "ZEROPAGE"
-MarioPeakJumpFrameCountdown: .res 1
+VerticalFlag:    .res 1       ; Determines if the player has positive or negative velocity, if its greatest bit is 1, then mario is up and its negative, if 1 and its positive marios is going down. 0 is neutral
 YVel:           .res 2       ; Player Y (signed) velocity (in pixels per 256 frames)
+
+MarioAnimationStates: .res 1  ; Tells us what he is doing
+
+MarioPeakJumpFrameCountdown: .res 1
 
 MarioAnimationFrameCountdown: .res 1 ; Holds the frame that this has started on, also holds number of frames until peak of marios jump
 
-VerticalFlag:    .res 1       ; Determines if the player has positive or negative velocity, if its greatest bit is 1, then mario is up and its negative, if 1 and its positive marios is going down. 0 is neutral
 Collision:      .res 1       ; Flag if a collision happened or not
 
 
@@ -21,7 +24,6 @@ XVel:           .res 2       ; Player X (signed) velocity (in pixels per 256 fra
 HorizontalFlag:  .res 1       ; Determines if player has positive or negative velocity, if greatest bit is 1, then negative, if 1 then positive, if 0, then neutral
 
 MarioAnimationFrame: .res 1   ; Tells us which frame he is on\
-MarioAnimationStates: .res 1  ; Tells us what he is doing
 
 
 SprPtr:         .res 2       ; Pointer to the sprite address in OAM RAM - 16bits (lo,hi)   Is used in RenderingActors and in selecting proper animation frame!
@@ -395,7 +397,7 @@ CurrentGameState:      .res 1       ; Keep track of game state
             
                     sta ParamAttribs
                         
-                    lda #1
+                    lda #1  
                     sta ParamNumTiles
 
                     jsr DrawSprite
@@ -408,6 +410,63 @@ CurrentGameState:      .res 1       ; Keep track of game state
             .endproc
 
         EndOfRunningLeft:
+
+
+        cmp #MarioAnimations::JUMPING_RIGHT
+        bne EndOfAirborneRight
+            .proc JumpingRightAnimation
+                Loop:
+                    ; Only 1 animation so its simple to get the sprite
+                    lda JumpingRight0,x         ; ParamTileNum
+                    sta ParamTileNum
+
+                    jsr SpritePlacement
+
+                    inx                         ; Go to attribute
+
+                    lda JumpingRight0,x         ; This is attribute
+                    sta ParamAttribs
+
+                    lda #1
+                    sta ParamNumTiles
+
+                    jsr DrawSprite
+                    
+                    inx
+                    cpx #8
+                    bcc Loop
+
+                EndOfLoop:
+            .endproc
+        EndOfAirborneRight:
+
+        cmp #MarioAnimations::JUMPING_LEFT
+        bne EndOfAirborneLeft
+            .proc JumpingLeftAnimation
+                Loop:
+                    ; Only 1 animation so its simple to get the sprite
+                    lda JumpingLeft0,x         ; ParamTileNum
+                    sta ParamTileNum
+
+                    jsr SpritePlacement
+
+                    inx                         ; Go to attribute
+
+                    lda JumpingLeft0,x         ; This is attribute
+                    sta ParamAttribs
+
+                    lda #1
+                    sta ParamNumTiles
+
+                    jsr DrawSprite
+                    
+                    inx
+                    cpx #8
+                    bcc Loop
+
+                EndOfLoop:
+            .endproc
+        EndOfAirborneLeft:
         
         
         ; This should always be at the end of the mario animations and should always be hit.
@@ -1103,6 +1162,24 @@ JumpingRight0:
             .byte $43                      ; index 6 
             .byte %00000000
     .endproc
+
+JumpingLeft0:
+    .proc JumpingLeft0Scope
+        TopLeft:
+            .byte $33                       ; index 0 - Sprite Tile #
+            .byte %01000000
+        TopRight:
+            .byte $32                       ; Sprite Tile #
+            .byte %01000000
+        BottomLeft:
+            .byte $43                      ; index 4
+            .byte %01000000
+        BottomRight:
+            .byte $42                       ; index 6
+            .byte %01000000
+
+    .endproc
+
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Hardcoded list of color values in ROM to be loaded by the PPU
