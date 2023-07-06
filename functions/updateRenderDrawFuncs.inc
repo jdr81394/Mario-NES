@@ -43,13 +43,21 @@
           ; JAKE TODO REMOVE, we are going to say if vertical flag is negative then skip, we will only make the vertical flag positive, when the vertical flag hits 0
           lda VerticalFlag
           bmi :+
-            lda #1
-            sta VerticalFlag
+            ; if vertical flag is positive: 
+            ; lda #1
+            ; sta VerticalFlag
+            ; Have gravity effect the player
+            lda YPos
+            clc
+            adc YVel
+            jmp :++         ; jump to storing the value
           :
 
+          ; This is a negative vertical flag meaning player is jumping
           lda YPos
-          clc
-          adc YVel
+          sec
+          sbc YVel
+          
         :
         
 

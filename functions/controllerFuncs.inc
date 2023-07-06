@@ -47,16 +47,78 @@ LoopButtons:
         sta MarioAnimationStates
 
     EndNoButtons:
-    ; CheckAButton:
-    ;     lda Buttons
-    ;     and #BUTTON_A
-    ;     beq EndAButton
-    ;         lda Buttons
-    ;         and #BUTTON_A
-    ;         cmp PrevButtons        ; Compare the current buttons and check if button A was previously pressed
-    ;         beq EndAButton                 ; If it was, we bypass the creation of a new missile
-    ;         ; lets do something....
-    ; EndAButton:
+    CheckAButton:
+        lda Buttons
+        and #BUTTON_A
+        beq EndAButton
+          ; Let's check collision, can only jump if there is currently a collision
+          ; If the value is equal to 0, then there is no collision, so we should NOT be able to jump 
+          lda Collision
+          beq EndOfAButtonCollisionCheck
+            ; If the value is NOT zero, meaning there is an under collision, then lets jump
+
+            ; Let's set state of Mario jumping, first lets get his direction
+            lda MarioAnimationStates
+            and #%00000001                  ; if accumulator is equal to 1, then he was facing left, else he was facing right
+            bne :+
+                ; so inside that means it was equal to 0, therefore he was facing right
+              lda #MarioAnimations::JUMPING_RIGHT
+              bpl StoreJumpAnimation                             ; Just use branch if positive (since it will always be positive) to go to store
+            :
+            lda #MarioAnimations::JUMPING_LEFT
+
+            StoreJumpAnimation:
+            sta MarioAnimationStates          ; Set jumping state
+
+            
+            ; Lets set the vertical flag to a negative value to show the player is going up
+            lda #%10000000
+            sta VerticalFlag
+
+            ; HACKY - TODO - Jake collision detection should not need to be reset here. Collision function should take care of this
+            lda #0
+            sta Collision
+
+            lda #FRAMES_UNTIL_PEAK_JUMP
+            sta MarioPeakJumpFrameCountdown
+
+            ; Lets set initial takeoff velocity
+            lda #INITIAL_TAKEOFF
+            sta YVel
+
+          
+          
+          EndOfAButtonCollisionCheck:
+
+          ; PrevButton Must have been A as well
+          lda PrevButtons
+          and #BUTTON_A
+          beq EndAButton
+          ; Let check if there was no collision, but the player is in the air and can add speed to the jump
+          lda MarioPeakJumpFrameCountdown
+          beq PeakJumpAlreadyReached
+            ; In here if it is not 0 meaning the player can add some velocity on
+            ; Lets just make sure that they jumped and are not falling
+            lda MarioAnimationStates
+            cmp #MarioAnimations::JUMPING_RIGHT
+            bcc PeakJumpAlreadyReached      ; If carry is set then it is 4, or the value above it 5
+          
+            ; Must use falling right because if it is equal to jumping left then the carry would be set
+            cmp #MarioAnimations::FALLING_RIGHT ; If carry is clear then it is 5, or the value below it 4
+            bcs PeakJumpAlreadyReached      ; If it is not equal, go to end
+
+            ; ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+            ; The above comparisons ensure it is either 4 or 5
+
+            lda YVel
+            clc
+            adc #INITIAL_TAKEOFF
+            sta YVel
+            lda #0
+            adc YVel+1
+          PeakJumpAlreadyReached:
+
+    EndAButton:
     CheckLeftButton:
         lda Buttons
         and #BUTTON_LEFT

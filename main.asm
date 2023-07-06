@@ -7,15 +7,19 @@
 .include "./datatypes/marioAnimations.inc"
 
 .segment "ZEROPAGE"
-
+MarioPeakJumpFrameCountdown: .res 1
 YVel:           .res 2       ; Player Y (signed) velocity (in pixels per 256 frames)
+
+MarioAnimationFrameCountdown: .res 1 ; Holds the frame that this has started on, also holds number of frames until peak of marios jump
+
+VerticalFlag:    .res 1       ; Determines if the player has positive or negative velocity, if its greatest bit is 1, then mario is up and its negative, if 1 and its positive marios is going down. 0 is neutral
+Collision:      .res 1       ; Flag if a collision happened or not
+
 
 XPos:           .res 2       ; Player X 16-bit position (8.8 fixed-point): hi+lo/256px
 XVel:           .res 2       ; Player X (signed) velocity (in pixels per 256 frames)
 HorizontalFlag:  .res 1       ; Determines if player has positive or negative velocity, if greatest bit is 1, then negative, if 1 then positive, if 0, then neutral
-VerticalFlag:    .res 1       ; Determines if the player has positive or negative velocity, if its greatest bit is 1, then mario is up and its negative, if 1 and its positive marios is going down. 0 is neutral
 
-MarioAnimationFrameCountdown: .res 1 ; Holds the frame that this has started on 
 MarioAnimationFrame: .res 1   ; Tells us which frame he is on\
 MarioAnimationStates: .res 1  ; Tells us what he is doing
 
@@ -23,7 +27,6 @@ MarioAnimationStates: .res 1  ; Tells us what he is doing
 SprPtr:         .res 2       ; Pointer to the sprite address in OAM RAM - 16bits (lo,hi)   Is used in RenderingActors and in selecting proper animation frame!
 RomSprPtr:      .res 2       ; Pointer to the ROM sprite address
 
-Collision:      .res 1       ; Flag if a collision happened or not
 
 Buttons:        .res 1       ; Pressed buttons (A|B|Sel|Start|Up|Dwn|Lft|Rgt)
 PrevButtons:    .res 1       ; Stores the previous buttons from the last frame
@@ -77,7 +80,6 @@ ParamHiByte:     .res 1       ; Used as parameter to subroutine
 
 PrevOAMCount:   .res 1       ; Store the previous number of bytes that were sent to the OAM
 
-CurrentGameState:      .res 1       ; Keep track of game state
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; RAM located at $0300 until $0800
@@ -87,6 +89,7 @@ Clock60:        .res 1       ; Counter that increments per second (60 frames)
 PlayerOneLives: .res 1       ; Lives for Mario
 Score:          .res 4       ; Score (1s, 10s, 100s, and 1000s digits in decimal)
 MenuItem:       .res 1       ; Keep track of the menu item that is selected
+CurrentGameState:      .res 1       ; Keep track of game state
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -833,6 +836,14 @@ Main:
         lda #GameState::WORLD1
         sta CurrentGameState
 
+        ; Set fall to 0 current
+        lda #0
+        sta MarioPeakJumpFrameCountdown
+
+        ; TODO: Mario falls from sky so perhaps remove this after the falling is done
+        lda #1
+        sta VerticalFlag
+
 
     GameLoop:
 
@@ -886,6 +897,12 @@ NMI:
         beq :+
             dec MarioAnimationFrameCountdown    ; Decrement the countdown by 1
     :
+
+    lda MarioPeakJumpFrameCountdown
+    beq :+                  ; If it is equal to 0
+        dec MarioPeakJumpFrameCountdown
+    :
+
 
 
     ; Reset collision
@@ -1071,7 +1088,21 @@ RunningRight2:
 .endproc
 
 
-; Running3:
+JumpingRight0:
+    .proc JumpingRight0Scope
+        TopLeft:
+            .byte $32                       ; Sprite Tile #
+            .byte %00000000
+        TopRight:
+            .byte $33                       ; index 2 - Sprite Tile #
+            .byte %00000000
+        BottomLeft:
+            .byte $42                       ; index 4
+            .byte %00000000
+        BottomRight:
+            .byte $43                      ; index 6 
+            .byte %00000000
+    .endproc
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Hardcoded list of color values in ROM to be loaded by the PPU

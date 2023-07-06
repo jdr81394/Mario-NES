@@ -11,30 +11,62 @@
       lda VerticalFlag
       beq NextActor
       ; If it is positive, meaning going down, skip
-      bpl :+
+      bpl IfPositive
         ; if it is negative, meaning mario has upwards velocity, handle it here
-        dec YPos+1            ; sign extension
-        ; do stuff Jake todo
-      :
-      bmi :++
-        lda YVel
-        clc
-        adc #GRAVITY_CONSTANT                  ; this is gravity for a second
-        
-        ; If YVel + Gravity Constant overflowed from 255 -> 0, then a carry would be present and we can just set to max velocity
-        bcc :+
-          ; Overflow occured so:
-          lda #MAX_VEL
-        
-      :
+        ; Then, lets see if marioanimationframecountdown is equal to 0, if not, then we just skip everything
 
-      ; If YVel is greater than the max velocity, then load the max velocity instead so we can clamp it
-      cmp #MAX_VEL
-      bcc :+
-        ; YVel was greater so were in here now
-        lda #MAX_VEL
-      :
-      sta YVel
+          ; If Mario Animation Frame Countdown, then let's do the things we were going to do
+            dec YPos+1            ; sign extension
+      
+            ; Gravity when going up will be a bit different versus going down
+            lda YVel
+            sec
+            sbc #INITIAL_TAKEOFF_FRICTION          ; using break for this should work for now
+            
+            bcs :+              ; if carry cleared means an overflow happened from 0 -> 255          
+              lda #1
+              sta VerticalFlag  ; Make player go in opposite direction
+              lda #0
+            :
+            sta YVel
+            lda #0
+            sbc YVel+1
+            jmp NextActor
+      IfPositive:
+      bmi IfMinus
+        ; First, let see if mario is jumping or just falling, if falling we handle it different
+        lda MarioAnimationStates
+        cmp MarioAnimations::FALLING_LEFT
+        bne :+     ; If not equal, then not falling left
+            
+            ; Do stuff here for falling left
+        :
+        cmp MarioAnimations::FALLING_RIGHT    
+        bne :+          ; If not equal, then not falling right
+                ; Do stuff here for falling left
+        :
+        ; lda MarioPeakJumpFrameCountdown
+        ; bne AfterFrameCountdown             ; If not equal to 0, just skip
+          ; If vertical flag is positive: 
+          lda YVel
+          clc
+          adc #GRAVITY_CONSTANT                  ; this is gravity for a second
+          
+          ; If YVel + Gravity Constant overflowed from 255 -> 0, then a carry would be present and we can just set to max velocity
+          bcc StoreYVel
+            ; Overflow occured so:
+            lda #MAX_VEL
+          
+          ; If YVel is greater than the max velocity, then load the max velocity instead so we can clamp it
+          cmp #MAX_VEL
+          bcc StoreYVel
+            ; YVel was greater so were in here now
+            lda #MAX_VEL
+          StoreYVel:
+          sta YVel
+      IfMinus:
+
+
       
       NextActor:
         txa
@@ -68,6 +100,10 @@
         lda CollidablesArray+Collidable::XPos,x    ; Bounding Box X1
         sta ParamRectX1
         lda CollidablesArray+Collidable::YPos,x    ; Bouding Box Y1
+        ; TODO FIX: THIS IS HACKY JAKE, THIS IS JUST USED TO GET THE COLLISION JUST RIGHT
+        sec
+        sbc #3
+        ;
         sta ParamRectY1
 
         lda CollidablesArray+Collidable::XPos,x
