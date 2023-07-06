@@ -146,8 +146,9 @@ LoopButtons:
           ; The above and below ensure that its between 4 and 7
           cmp #MarioAnimations::DEATH
           bcs :+
-            ; The above 2 conditions passed meaning mario is in the air
-            bcc EndOfSetUpAnimation      
+            lda #MarioAnimations::JUMPING_LEFT
+            sta MarioAnimationStates
+            jmp EndOfSetUpAnimation      
           :
 
           ; Check to see if mario was already running left first to restart animation
@@ -247,8 +248,10 @@ LoopButtons:
         ; The above and below ensure that its between 4 and 7
         cmp #MarioAnimations::DEATH
         bcs :+
-          ; The above 2 conditions passed meaning mario is in the air
-          bcc EndOfSetUpAnimationRight      
+            ; The above 2 conditions passed meaning mario is in the air
+            lda #MarioAnimations::JUMPING_RIGHT
+            sta MarioAnimationStates
+            jmp EndOfSetUpAnimationRight   
         :
 
         ; Check to see if mario was already running right first to restart animation

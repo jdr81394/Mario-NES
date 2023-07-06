@@ -121,6 +121,7 @@
         lda Collision
         beq NextCollidable                    ; If no collision, don't do anything
 
+
           jmp FinishCollisionCheck       ; Also, if collision happened we stop looping other enemies and leave the subroutine
 
     NextCollidable:
@@ -222,6 +223,19 @@
     PointIsInside:
       lda ParamYPos                             ; If we reach here, the point is inside the bounding box!
       sta Collision                      ; Collision detected!
+
+      ; Let's have player running left or right if under collision is detected and they have velocity
+      lda XVel
+      bmi :+
+        ; if positive set to right
+        lda #MarioAnimations::RUNNING_RIGHT
+        bpl :++
+      : 
+        ; if negative set to left
+        lda #MarioAnimations::RUNNING_LEFT
+      :
+      sta MarioAnimationStates
+
       jmp EndCollisionCheck
 
     PointIsOutside:
