@@ -38,7 +38,10 @@ MAX_COLLIDABLES = 49
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; REMEMBER : These are mappings that are relative to the PPU!
 NAME_TABLE_0 = $2000
+NAME_TABLE_ATTR_0 = $23C0
 NAME_TABLE_1 = $2400
+NAME_TABLE_ATTR_1 = $27C0
+
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
