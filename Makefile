@@ -2,6 +2,7 @@
 # Rule to assemble and link all assembly files
 ###############################################################################
 build:
+	# rm *.o *.nes
 	ca65 main.asm -o main.o
 	ld65 -C nes.cfg main.o -o main.nes
 

@@ -210,93 +210,143 @@ EndRoutine:
     rts
 .endproc
 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Subroutine to check tile and add it to the collidables array - TODO: Clean up!
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+.proc AddToCollidablesArray 
+
+    ; Accumulator has the value to compare, it is already in the accumulator
+    ; Is it a block we want? Yes
+    cmp #$45
+    bne :+      ; If not equal, check next value
+    :
+    cmp #$29
+    bne :+  
+      SetYParam:
+        txa
+        pha       ; push old x up 
+
+        lda #0
+        sta ParamYPos
+        sta ParamXPos
+        ; tya 
+        ; pha       ; push old y up
+        lda Column
+        Loop1:
+          cmp #32
+          bcc DetermineY
+            sec
+            sbc #32
+            bpl Loop1
+        DetermineY:
+        tax     ; hold the counter that was column
+        Loop2:
+          lda ParamYPos 
+          clc
+          adc #8
+          sta ParamYPos
+          dex
+          bne Loop2
+
+      SetXParam:
+        lda XScroll
+        sta ParamXPos
+
+        jsr AddNewCollidable
+
+        pla
+        tax
+    :
+  rts
+.endproc
+
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Subroutine to check tile and add it to the collidables array - TODO: Clean up!
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-.proc AddToCollidablesArray
+; .proc AddToCollidablesArray
 
-    ; If there is a brick, that is 30, above it that means it is directly above and we do not need to add it
-    ; TODO Also we will need to exclude if it is in the attribute table.. we'll handle that in a bit
+;     ; If there is a brick, that is 30, above it that means it is directly above and we do not need to add it
+;     ; TODO Also we will need to exclude if it is in the attribute table.. we'll handle that in a bit
     
-    ; Possible collidables: $45, $47
-    DetermineIfCollidable:
-        ; Accumulator has the value to compare, it is already in the accumulator
-        ; Is it a block we want? Yes
-        cmp #$45
-        bne CheckNext      ; If not equal, check next value
-            ; TODO If it does equal , then let's see if there is a collidable above it, to the left, and to the right 
-            ; push it into the collidables array
+;     ; Possible collidables: $45, $47
+;     DetermineIfCollidable:
+;         ; Accumulator has the value to compare, it is already in the accumulator
+;         ; Is it a block we want? Yes
+;         cmp #$45
+;         bne CheckNext      ; If not equal, check next value
+;             ; TODO If it does equal , then let's see if there is a collidable above it, to the left, and to the right 
+;             ; push it into the collidables array
 
             
-            ; WE DO NOT NEED TO PUSH ACCUMULATOR TO STACK THERE IS NOTHING IMPORTANT IN THERE FROM PREVIOUS FUNCTION
+;             ; WE DO NOT NEED TO PUSH ACCUMULATOR TO STACK THERE IS NOTHING IMPORTANT IN THERE FROM PREVIOUS FUNCTION
 
-            txa                 ; transfer x to accumulator
-            pha                 ; push x in accumulator to stack
-            sta VarX
+;             txa                 ; transfer x to accumulator
+;             pha                 ; push x in accumulator to stack
+;             sta VarX
 
-            ; Since each screen is 32 columns long ( its also 8 pixels wide per column )
-            ; In order to get the x placement we need to load up the 255 bytes are find the remainder value
-            ; Also, for every power of 8 it goes over it will also increase the Y position by 8
+;             ; Since each screen is 32 columns long ( its also 8 pixels wide per column )
+;             ; In order to get the x placement we need to load up the 255 bytes are find the remainder value
+;             ; Also, for every power of 8 it goes over it will also increase the Y position by 8
             
-            ; Divide by 32 until it is less than 32 to find the x position
-            tya                  ; Transfer y ( little loop ) to accumulator
-            sta VarY             ; hold the little loop
+;             ; Divide by 32 until it is less than 32 to find the x position
+;             tya                  ; Transfer y ( little loop ) to accumulator
+;             sta VarY             ; hold the little loop
 
-            DetermineXParam:
-                ldy #0                  ; This will be used to help us get a precise Y value 
-                Loop:
-                    cmp #32              ; If it is greater than 32, subtract 32 by looping
-                    bcc SetXParam
-                        iny              ; This increments Y by 1 
-                        sec
-                        sbc #32
-                        jmp Loop
+;             DetermineXParam:
+;                 ldy #0                  ; This will be used to help us get a precise Y value 
+;                 Loop:
+;                     cmp #32              ; If it is greater than 32, subtract 32 by looping
+;                     bcc SetXParam
+;                         iny              ; This increments Y by 1 
+;                         sec
+;                         sbc #32
+;                         jmp Loop
         
-                SetXParam:
-                    tax                 ; Transfer accumulator to 8
-                    lda #0              ; Set it equal to 0
-                    ; Now in the accumulator, we have the x placement of the tile we just need to multiply this by 8 for the pixels
-                    AddLoop:
-                        clc 
-                        adc #8
-                        ; Decrement y one time to move up the x position that it will be at
-                        dex
-                        bne AddLoop ; If not equal to 0, loop again
+;                 SetXParam:
+;                     tax                 ; Transfer accumulator to 8
+;                     lda #0              ; Set it equal to 0
+;                     ; Now in the accumulator, we have the x placement of the tile we just need to multiply this by 8 for the pixels
+;                     AddLoop:
+;                         clc 
+;                         adc #8
+;                         ; Decrement y one time to move up the x position that it will be at
+;                         dex
+;                         bne AddLoop ; If not equal to 0, loop again
 
-                    ; Finally, store the ParamXPos
-                    sta ParamXPos
+;                     ; Finally, store the ParamXPos
+;                     sta ParamXPos
             
-            DetermineYParam:
-                pla                 ; PUll the old x off the stack  that has the counter for the outer loop ( Big loop )
-                tax                 ; Transfer the accumulator that has the old X ( big loop counter ) to X
-                tya                 ; Transfer Y to accumulator with precise Y value within the bands 
-                ; X register = x counter (big loop counter) , accumulator has precise y value within bands
-                SetYLoop:
-                    cpx #0
-                    beq FinishYLoop
-                        clc 
-                        adc #64     ; This is 8 rows of pixels which is 8x8 = 64
-                        dex
-                        jmp SetYLoop
-                FinishYLoop:
+;             DetermineYParam:
+;                 pla                 ; PUll the old x off the stack  that has the counter for the outer loop ( Big loop )
+;                 tax                 ; Transfer the accumulator that has the old X ( big loop counter ) to X
+;                 tya                 ; Transfer Y to accumulator with precise Y value within the bands 
+;                 ; X register = x counter (big loop counter) , accumulator has precise y value within bands
+;                 SetYLoop:
+;                     cpx #0
+;                     beq FinishYLoop
+;                         clc 
+;                         adc #64     ; This is 8 rows of pixels which is 8x8 = 64
+;                         dex
+;                         jmp SetYLoop
+;                 FinishYLoop:
 
-            sta ParamYPos
+;             sta ParamYPos
                 
-            ; Must preserve the x value, the a value in the previous function is already used, y is not touched
-            ; txa     ; Transfer X to Accumulator
-            ; pha     ; Push X on accumulator to stack
-            jsr AddNewCollidable
-            ; pla     ; Pull old X off stack onto accumulator
-            ; tax     ; Transfer the X value on the accumulator to the stack
-            ; Pull off the original values that were pushed onto the stack
-            ldx VarX
-            ldy VarY
+;             ; Must preserve the x value, the a value in the previous function is already used, y is not touched
+;             ; txa     ; Transfer X to Accumulator
+;             ; pha     ; Push X on accumulator to stack
+;             jsr AddNewCollidable
+;             ; pla     ; Pull old X off stack onto accumulator
+;             ; tax     ; Transfer the X value on the accumulator to the stack
+;             ; Pull off the original values that were pushed onto the stack
+;             ldx VarX
+;             ldy VarY
 
-        CheckNext:
+;         CheckNext:
 
-    rts
-.endproc
+;     rts
+; .endproc
 
 
 
