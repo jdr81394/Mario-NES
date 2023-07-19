@@ -252,7 +252,7 @@ EndRoutine:
         lda XScroll
         sta ParamXPos
 
-        jsr AddNewCollidable
+        ; jsr AddNewCollidable
 
         pla
         tax

@@ -107,148 +107,189 @@ CurrentGameState:      .res 1       ; Keep track of game state
 ;; Routine to draw a new column of tiles off-screen every 8 pixels
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 .proc DrawNewColumn
-    lda XScroll              ; We'll set the NewColAddr lo-byte and hi-byte 
-    lsr
-    lsr
-    lsr                      ; Shift right 3 times to divide XScroll by 8
-    sta NewColAddr           ; Set the lo-byte of the column address            ; PPU ADDRESS
+    lda XScroll              ; We'll set the NewColAddr lo-byte and hi-byte     ; 3 cycles
+    lsr                                                                         ; 2             - 5
+    lsr                                                                         ; 2             - 7
+    lsr                      ; Shift right 3 times to divide XScroll by 8       ; 2 (Accumulator)- 9
+     ; PPU ADDRESS
+    sta NewColAddr           ; Set the lo-byte of the column address            ; 3 (ZP)        - 12
 
-    lda CurrNametable        ; The hi-byte comes from the nametable
-    eor #1                   ; Invert the low bit (0 or 1)
-    asl
-    asl                      ; Multiply by 4 (A is $00 or $04)
-    clc
-    adc #$20                 ; Add $20 (A is $20 or $24) for nametabe 0 or 1
-    sta NewColAddr+1         ; Set the hi-byte of the column address ($20xx or $24xx)
+    lda CurrNametable        ; The hi-byte comes from the nametable             ; 3 (ZP)        - 15
+    eor #1                   ; Invert the low bit (0 or 1)                      ; 2 (immediate) - 17
+    asl                                                                         ; 2 (accumulator)-19
+    asl                      ; Multiply by 4 (A is $00 or $04)                  ; 2 (accumulator)-21
+    clc                                                                         ; 2 ( default)   -23
+    adc #$20                 ; Add $20 (A is $20 or $24) for nametabe 0 or 1    ; 2 (immediate)  - 25
+    ; Set the hi-byte of the column address ($20xx or $24xx)
+    sta NewColAddr+1                                                            ; 3 (ZP)         - 27
 
-    lda Column               ; Multiply (col * 32) to compute the data offset
-    asl
-    asl
-    asl
-    asl
-    asl
-    sta SourceAddr           ; Store lo-byte (--XX) of column source address
+    lda Column               ; Multiply (col * 32) to compute the data offset   ; 3 (ZP)         - 30
+    asl                                                                         ; 2 accumulator  - 32
+    asl                                                                         ; 2              - 34
+    asl                                                                         ; 2              - 36
+    asl                                                                         ; 2              - 38
+    asl                                                                         ; 2             - 40
+    sta SourceAddr           ; Store lo-byte (--XX) of column source address    ; 3 (ZP)        - 43
 
-    lda Column
-    lsr
-    lsr
-    lsr                      ; Divide current Column by 8 (using 3 shift rights)
-    sta SourceAddr+1         ; Store hi-byte (XX--) of column source addres
+    lda Column                                                                  ; 3 (ZP)        - 46
+    ; Divide current Column by 8 (using 3 shift rights)
+    lsr                                                                         ; 2             - 48
+    lsr                                                                         ; 2             - 50
+    lsr                                                                         ; 2             - 52
+    ; Store hi-byte (XX--) of column source addres
+    sta SourceAddr+1                                                            ; 3(ZP)         - 55
 
-                             ; Here we'll add the offset the column source address with the address of where the BackgroundData
-    lda SourceAddr           ; Lo-byte of the column data start + offset = address to load column data from
-    clc
-    adc ParamLoByte     ; Add the lo-byte
-    sta SourceAddr           ; Save the result of the offset back to the source address lo-byte
+    ; Here we'll add the offset the column source address with the address of where the BackgroundData
+    ; Lo-byte of the column data start + offset = address to load column data from
+    lda SourceAddr                                                              ; 3(ZP)         - 58
+    clc                                                                         ; 2             - 60
+    adc ParamLoByte     ; Add the lo-byte                                       ; 3 (ZP)        - 63
+    ; Save the result of the offset back to the source address lo-byte
+    sta SourceAddr                                                              ; 3 (ZP)        - 66
 
-    lda SourceAddr+1         ; Hi-byte of the column source address
-    adc ParamHiByte     ; Add the hi-byte
-    sta SourceAddr+1         ; Add the result of the offset back to the source address hi-byte
+    lda SourceAddr+1         ; Hi-byte of the column source address             ; 3 (ZP)        - 69
+    adc ParamHiByte     ; Add the hi-byte                                       ; 3 (ZP)        - 72
+    ; Add the result of the offset back to the source address hi-byte
+    sta SourceAddr+1                                                            ; 3 (ZP)        - 75
 
+; Jake
     DrawColumn:
-      lda #%00000100
-      sta PPU_CTRL           ; Tell the PPU that the increments will be +32 mode
+      lda #%00000100                                                            ; 3             - 78
+      ; Tell the PPU that the increments will be +32 mode
+      sta PPU_CTRL                                                              ; 4 (absolute)  - 82
 
-      lda PPU_STATUS         ; Hit PPU_STATUS to reset hi/lo address latch
-      lda NewColAddr+1
-      sta PPU_ADDR           ; Set the hi-byte of the new column start address
-      lda NewColAddr
-      sta PPU_ADDR           ; Set the lo-byte of the new column start address
+      lda PPU_STATUS         ; Hit PPU_STATUS to reset hi/lo address latch      ; 4 (absolute)  - 86
+      lda NewColAddr+1                                                          ; 3 (ZP)        - 89
+      sta PPU_ADDR           ; Set the hi-byte of the new column start address  ; 4 (absolute)  - 93
+      lda NewColAddr                                                            ; 3 (ZP)        - 96
+      sta PPU_ADDR           ; Set the lo-byte of the new column start address  ; 4 (absolute)  - 100
 
-      ldx #30                ; We'll loop 30 times (=30 rows)
-      ldy #0
-      DrawColumnLoop:
-        lda (SourceAddr),y   ; Copy from the address of the column source + y offset
-        sta PPU_DATA
+      ldx #30                ; We'll loop 30 times (=30 rows)                   ; 2 (immediate) - 102
+      ldy #0                                                                    ; 2 (immediate) - 104           - final good point correct everything
+    ; at start 104, (66 if go down path, 31 if you don't go down) (if you go down path and have 30 columns it will be 1980 + 96 =2076)
+    ; 31 if nothing collidable = 930 + 96 = 1,026
+      DrawColumnLoop:          
+        ; Copy from the address of the column source + y offset
+        lda (SourceAddr),y                                                      ; 5+(indirect, add 1 cycle if page boundary crossed = 6)   98
+        sta PPU_DATA                                                            ; 4 (abs)   104
 
-        pha 
+        pha                                                                     ; 3 (def)   108
 
         
-        lda CurrentGameState
-        cmp GameState::TITLE
-        beq E
-            pla
+        lda CurrentGameState                                                    ; 4 (ZP)    111
+        cmp #GameState::TITLE                                                   ; 2 (imm?)  115
+        beq E                                                                   ; 3/2       117
+            pla                                                                 ; 4         120
             ; jsr AddToCollidablesArray
-            jmp :+
 
+            cmp #$29                                                            ; 2 (im)    124 
+            bne :+                                                              ; 3/2       126
+              SetYParam:
+                pha      ; push A first                                         ; 3         129
+                txa                                                             ; 2         131
+                pha       ; push old x up                                       ; 3         134 at this point
+
+                ; Paste here from HOLD THIS CODE 
+                pla                                     ; 4
+                tax                                     ; 2
+                pla     ; pull A                        ; 4
+            :
+            jmp :+                                     ; 3 
         E:
-        bne :+
-            pla
+        bne :+                                         ; 3/2
+            pla                                        ; 4
         :
 
 
-        iny                  ; Y++
-        dex                  ; X--
-        bne DrawColumnLoop   ; Loop 30 times to draw all 30 rows of this column
-    rts
+        iny                  ; Y++                     ; 2
+        dex                  ; X--                     ; 2    
+        ; Loop 30 times to draw all 30 rows of this column
+        bne DrawColumnLoop                             ; 3/2
+    rts                                                ; 6
 .endproc
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Routine to draw attributes off-screen every 32 pixels
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 .proc DrawNewAttribs
-    lda CurrNametable
-    eor #1                   ; Invert low bit (0 or 1)
-    asl                      ; Multiuply by 2, ($00 or $02)
-    asl                      ; Multiply by 2 again ($00 or $04)
-    clc
-    adc #$23                 ; Add high byte of attribute base address ($23-- or $27--)
-    sta NewColAddr+1         ; The hi-byte now has address = $23 or $27 for nametable 0 or 1
+    lda CurrNametable                                                           ; 3 (ZP)
+    eor #1                   ; Invert low bit (0 or 1)                          ; 2 (immediate)
+    asl                      ; Multiuply by 2, ($00 or $02)                     ; 2
+    asl                      ; Multiply by 2 again ($00 or $04)                 ; 2
+    clc                                                                         ; 2
+    ; Add high byte of attribute base address ($23-- or $27--)
+    adc #$23                                                                    ; 2            
+    ; The hi-byte now has address = $23 or $27 for nametable 0 or 1
+    sta NewColAddr+1                                                            ; 3 
 
-    lda XScroll
-    lsr
-    lsr
-    lsr
-    lsr
-    lsr                      ; Divide by 32 (shift right 5 times)
-    clc
-    adc #$C0
-    sta NewColAddr           ; The lo-byte contains (attribute base + XScroll/32)
+    lda XScroll                                                                 ; 3 (ZP)
+    lsr                                                                         ; 2
+    lsr                                                                         ; 2
+    lsr                                                                         ; 2
+    lsr                                                                         ; 2
+    lsr                      ; Divide by 32 (shift right 5 times)               ; 2
+    clc                                                                         ; 2
+    adc #$C0                                                                    ; 2 (immediate)
+     ; The lo-byte contains (attribute base + XScroll/32)
+    sta NewColAddr                                                              ; 3 (ZP)
 
-    lda Column               ; (Column/4) * 8, since each row of attribute data in ROM is 8 bytes
-    and #%11111100           ; Mask the lowest two bits to get the closest lowest multiple of 4
-    asl                      ; One shift left equivelant to a multiplication by 2
-    sta SourceAddr           ; Stores the lo-byte of the source attribute address offset (in ROM)
+    ; (Column/4) * 8, since each row of attribute data in ROM is 8 bytes
+    lda Column                                                                  ; 3 (ZP)
+     ; Mask the lowest two bits to get the closest lowest multiple of 4    
+    and #%11111100                                                              ; 2 (immediate)
+     ; One shift left equivelant to a multiplication by 2
+    asl                                                                         ; 2                  
+    ; Stores the lo-byte of the source attribute address offset (in ROM)       
+    sta SourceAddr                                                              ; 4 (absolute) 
+    ; Proceed to compute the hi-byte of the source address offset in ROM
+    lda Column                                                                  ; 3 (ZP)
+    lsr                      ; /2                                               ; 2
+    lsr                      ; /4                                               ; 2
+    lsr                      ; /8                                               ; 2
+    lsr                      ; /16                                              ; 2
+    lsr                      ; /32                                              ; 2
+    lsr                      ; /64                                              ; 2
+    lsr                      ; /128, shift right 7 times to divide by 128       ; 2
+    sta SourceAddr+1         ; Stores the hi-byte of the Source address offset  ; 4 (absolute)
 
-    lda Column               ; Proceed to compute the hi-byte of the source address offset in ROM
-    lsr                      ; /2
-    lsr                      ; /4
-    lsr                      ; /8
-    lsr                      ; /16
-    lsr                      ; /32
-    lsr                      ; /64
-    lsr                      ; /128, shift right 7 times to divide by 128
-    sta SourceAddr+1         ; Stores the hi-byte of the Source address offset
+    lda SourceAddr                                                              ; 3 (ZP) - 71
+    clc                                                                         ; 2
+    ; Add the lo-byte of the base address where AttributeData is in ROM 
+    adc ParamLoByte                                                             ; 3 (ZP)
+    ; Stores the result of the add back into the lo-byte of the SourceAddr
+    sta SourceAddr                                                              ; 4 (absolute)
 
-    lda SourceAddr
-    clc
-    adc ParamLoByte      ; Add the lo-byte of the base address where AttributeData is in ROM
-    sta SourceAddr           ; Stores the result of the add back into the lo-byte of the SourceAddr
-
-    lda SourceAddr+1
-    adc ParamHiByte      ; Add the hi-byte of the base address where AttributeData is in ROM
-    sta SourceAddr+1         ; Stores the result of the add back into the hi-byte of the SourceAddr
+    lda SourceAddr+1                                                            ; 4 (absolute)
+    ; Add the hi-byte of the base address where AttributeData is in ROM
+    adc ParamHiByte                                                             ; 3 (ZP) - 87
+    ; Stores the result of the add back into the hi-byte of the SourceAddr
+    sta SourceAddr+1                                                            ; 4 (absolute) - 91
 
     DrawAttribute:
-      bit PPU_STATUS         ; Hit PPU_STATUS to reset the high/low address latch
-      ldy #0                 ; Y = 0
-      DrawAttribLoop:
-        lda NewColAddr+1
-        sta PPU_ADDR         ; Write the hi-byte of attribute PPU destination address
-        lda NewColAddr
-        sta PPU_ADDR         ; Write the lo-byte of attribute PPU destination address
-        lda (SourceAddr),y   ; Fetch attribute byte from ROM
-        sta PPU_DATA         ; Stores new attribute data into the PPU memory
-        iny                  ; Y++
-        cpy #8
-        beq :+               ; Loop 8 times (to copy 8 attribute bytes)
-          lda NewColAddr
-          clc
-          adc #8
-          sta NewColAddr     ; Next attribute will be at (NewColAddr + 8)
-          jmp DrawAttribLoop
+    ; Hit PPU_STATUS to reset the high/low address latch
+      bit PPU_STATUS                                                            ; 4 (absolute)
+      ldy #0                 ; Y = 0                                            ; 2 (absolute)
+      DrawAttribLoop:       ; This loop is 45 cycles, so 45 * 7 + 46 + 6= 367 ( 46 is the final branch)
+        lda NewColAddr+1                                                        ; 3 (ZP)
+        ; Write the hi-byte of attribute PPU destination address
+        sta PPU_ADDR                                                            ; 4 (absolute)
+        lda NewColAddr                                                          ; 3 (ZP)
+        ; Write the lo-byte of attribute PPU destination address
+        sta PPU_ADDR                                                            ; 4 (absolute)
+        ; Fetch attribute byte from ROM
+        lda (SourceAddr),y                                                      ; 5 (indirect, +1 if goes across boundary)
+        ; Stores new attribute data into the PPU memory
+        sta PPU_DATA                                                            ; 4 (absolute)
+        iny                  ; Y++                                              ; 2 (default)
+        cpy #8                                                                  ; 2 (immediate)
+        beq :+               ; Loop 8 times (to copy 8 attribute bytes)         ; 3/2 (if taken/not taken)
+          lda NewColAddr                                                        ; 3 (ZP)
+          clc                                                                   ; 2 
+          adc #8                                                                ; 3 (ZP)
+          sta NewColAddr     ; Next attribute will be at (NewColAddr + 8)       ; 4 (absolute)
+          jmp DrawAttribLoop                                                    ; 3 (absolute)
        :
-    rts
+    rts                                                                         ; 6 
 .endproc
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -939,6 +980,7 @@ Main:
 
         ; column is 66 after this
 
+;Jake 
         lda #%10010000
         sta PPU_CTRL            ; Set PPU_CTRL to +1 mode for the attributes
 
@@ -1309,6 +1351,9 @@ NMI:
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
     ; NMI to start of rendering (NTSC): 2273.33 cycles 
     ; Every single instruction total cycles : 161~
+    ; Draw Column: 2076/1,026~ if every sprite is a collidable/if none is a collidable
+    ; DrawNewAttribute: 367~ every column
+    ; 2,604/1,554  If every sprite is a collidable/ if none of the sprites were collidable 
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
@@ -1756,13 +1801,13 @@ Screen1Data:                ; left side
     .byte $24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$45,$47,$47,$47,$47 ; 31 
     .byte $24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$45,$47,$47,$47,$47 ; 32
     ; right side
-    ; .byte $24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$45,$47,$47,$47,$47 ; 32
+    ; .byte $24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$45,$47,$47,$47,$47 ; 33
 EndScreen1:
 ScreenData2:
         ;      1   2   3   4   5   6   7   8   9   10  11  12  13  14  15 16   17 18  19   20  21  22  23  24  25  26  27  28  29  30  31 32
     .byte $24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$45,$47,$47,$47,$47 ; 1 top to bottom --->
-    .byte $29,$29,$29,$29,$29,$29,$29,$29,$29,$29,$29,$29,$29,$29,$29,$29,$29,$29,$29,$29,$29,$29,$29,$29,$29,$29,$29,$45,$47,$47,$47,$47 ; 2
-    .byte $29,$29,$29,$29,$29,$29,$29,$29,$29,$29,$29,$29,$29,$29,$29,$29,$29,$29,$29,$29,$29,$29,$29,$29,$29,$29,$29,$45,$47,$47,$47,$47 ; 3
+    .byte $27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27 ; 2
+    .byte $29,$29,$29,$29,$29,$29,$29,$29,$29,$29,$29,$29,$29,$29,$29,$29,$29,$29,$29,$29,$29,$29,$29,$29,$29,$29,$29,$29,$29,$29,$29,$29; 3
     .byte $24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$29,$24,$24,$24,$45,$47,$47,$47,$47 ; 4
     .byte $24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$29,$24,$24,$24,$45,$47,$47,$47,$47 ; 5
     .byte $24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$29,$24,$24,$24,$45,$47,$47,$47,$47 ; 6 
@@ -1771,8 +1816,8 @@ ScreenData2:
     .byte $24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$29,$24,$24,$24,$45,$47,$47,$47,$47 ; 9
     .byte $24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$29,$24,$24,$24,$45,$47,$47,$47,$47 ; 10
     .byte $24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$29,$29,$24,$24,$45,$47,$47,$47,$47 ; 11
-    .byte $24,$24,$24,$24,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$29,$27,$27,$45,$47,$47,$47,$47 ; 12
-    .byte $27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$29,$27,$24,$45,$47,$47,$47,$47 ; 13
+    .byte $27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27 ; 12
+    .byte $24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$29,$24,$24,$45,$47,$47,$47,$47 ; 13
     .byte $24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$29,$24,$24,$45,$47,$47,$47,$47 ; 14
     .byte $24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$29,$24,$24,$45,$47,$47,$47,$47 ; 15
     .byte $24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$29,$24,$24,$45,$47,$47,$47,$47 ; 16
@@ -1832,7 +1877,7 @@ Screen3Data:
 EndScreen3:
 Screen4Data:
     ;      1   2   3   4   5   6   7   8   9   10  11  12  13  14  15 16   17 18  19   20  21  22  23  24  25  26  27  28  29  30  31 32
-    .byte $24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$45,$47,$47,$47,$47 ; 1 top to bottom --->
+    .byte $29,$29,$29,$29,$29,$29,$29,$29,$29,$29,$29,$29,$29,$29,$29,$29,$29,$29,$29,$29,$29,$29,$29,$29,$29,$29,$29,$29,$29,$29,$29,$29 ; 1 top to bottom ---->
     .byte $24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$45,$47,$47,$47,$47 ; 2
     .byte $24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$45,$47,$47,$47,$47 ; 3
     .byte $24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$45,$47,$47,$47,$47 ; 4
