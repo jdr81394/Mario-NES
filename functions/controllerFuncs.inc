@@ -304,6 +304,8 @@ LoopButtons:
 
         MoveScreenRight:
         inc XScroll           ; If XPos is already greater than 200, just scroll right
+        ; Call function to move all the collidables as well
+        jsr MoveCollidables
       
       NotRight:
         lda HorizontalFlag          

@@ -103,7 +103,7 @@
 
         lda CollidablesArray+Collidable::XPos,x
         clc
-        adc #24                        ; Get right value of the collidable bounding box by adding 8 pixels to the right
+        adc #10                        ; Get right value of the collidable bounding box by adding 8 pixels to the right.. giving 10 for some more cushion
         sta ParamRectX2                  ; Bounding Box X2
 
         lda CollidablesArray+Collidable::YPos,x
@@ -172,11 +172,11 @@ EndRoutine:
 
     ; Accumulator has the value to compare, it is already in the accumulator
     ; Is it a block we want? Yes
-    cmp #$29
+    cmp #$45
     bne :+      ; If not equal, check next value
     :
-    cmp #$45
-    bne :+  
+    cmp #$29
+    bne End29
       ; SetYParam:
         ; txa
         ; pha       ; push old x up 
@@ -221,16 +221,24 @@ EndRoutine:
           sta ParamYPos
         
         SetX:
-          lda XScroll
-          sec
-          sbc #16
+          lda CurrentGameState
+          cmp #GameState::LOADING
+          bne :+
+            ; If its loading, use this 
+            lda XScroll
+            sec
+            sbc #8                    ; XScroll will already be 8 pixels past the actual 8 position ( i think )
+            jmp :++
+          :
+          ; If not loading
+          lda #247
+          :
           sta ParamXPos
-
-        jsr AddNewCollidable
+          jsr AddNewCollidable
 
         pla
         tax
-    :
+    End29:
   rts
 .endproc
 
