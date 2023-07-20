@@ -222,37 +222,56 @@ EndRoutine:
     :
     cmp #$29
     bne :+  
-      SetYParam:
-        txa
-        pha       ; push old x up 
+      ; SetYParam:
+        ; txa
+        ; pha       ; push old x up 
+
+        txa 
+        pha
 
         lda #0
+        sta ParamXPos
+        lda #240
         sta ParamYPos
-        sta ParamXPos
-        ; tya 
-        ; pha       ; push old y up
-        lda Column
-        Loop1:
-          cmp #32
-          bcc DetermineY
-            sec
-            sbc #32
-            bpl Loop1
-        DetermineY:
-        tax     ; hold the counter that was column
-        Loop2:
-          lda ParamYPos 
-          clc
-          adc #8
-          sta ParamYPos
+      ;   ; tya 
+      ;   ; pha       ; push old y up
+      ;   lda Column
+      ;   Loop1:
+      ;     cmp #32
+      ;     bcc DetermineY
+      ;       sec
+      ;       sbc #32
+      ;       bpl Loop1
+      ;   DetermineY:
+      ;   tax     ; hold the counter that was column
+      ;   Loop2:
+      ;     lda ParamYPos 
+      ;     clc
+      ;     adc #8
+      ;     sta ParamYPos
+      ;     dex
+      ;     bne Loop2
+
+      ; SetXParam:
+      ;   lda XScroll
+      ;   sta ParamXPos
+
+        SetY:
+          sec
+          sbc #8
           dex
-          bne Loop2
+          bne SetY
+          sec
+          sbc #16
+          sta ParamYPos
+        
+        SetX:
+          lda XScroll
+          sec
+          sbc #16
+          sta ParamXPos
 
-      SetXParam:
-        lda XScroll
-        sta ParamXPos
-
-        ; jsr AddNewCollidable
+        jsr AddNewCollidable
 
         pla
         tax

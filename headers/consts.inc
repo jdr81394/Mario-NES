@@ -11,6 +11,10 @@ PPU_ADDR    = $2006
 PPU_DATA    = $2007
 PPU_OAM_DMA = $4014
 
+
+BG_BUF_ADDR = $0300                 ; 30 bytes since 30 rows
+BG_ATTR_BUF_ADDR = $031E             ; 1E = 30 so this is 30 bytes after
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Controller ports and buttons
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;

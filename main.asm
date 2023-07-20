@@ -7,13 +7,19 @@
 .include "./datatypes/marioAnimations.inc"
 
 .segment "ZEROPAGE"
-Column:         .res 1       ; Stores the column (of tiles) we are in the level in ROM
+CollidablesArray:    .res MAX_COLLIDABLES * .sizeof(Collidable)
+
+SourceAddr:     .res 2       ; The source address in ROM of the new column tiles
+
+; BgBufPtr:        .res 2       ; Pointer to the background buffer address in RAM 
+PrevXScroll:    .res 1       ; Compare to previous position of XScroll so we don't write twice
 XScroll:        .res 1       ; Store the horizontal scroll position used to determine PPU ADDRESS for drawing
+
+Column:         .res 1       ; Stores the column (of tiles) we are in the level in ROM
 
 
 ParamXPos:      .res 1       ; Used as parameter to subroutine
 ParamYPos:      .res 1       ; Used as parameter to subroutine
-CollidablesArray:    .res MAX_COLLIDABLES * .sizeof(Collidable)
 
 
 BgPtr:          .res 2       ; Pointer to background address - 16bits (lo,hi)
@@ -25,7 +31,6 @@ RomSprPtr:      .res 2       ; Pointer to the ROM sprite address
 CurrNametable:  .res 1       ; Store the current starting nametable (0 or 1) 
 CompareColumnVal: .res 1       ; Compare this to determine to what point the column should loop to in LoadAttribs
 NewColAddr:     .res 2       ; The destination address of the new column in PPU
-SourceAddr:     .res 2       ; The source address in ROM of the new column tiles
 
 VerticalFlag:    .res 1       ; Determines if the player has positive or negative velocity, if its greatest bit is 1, then mario is up and its negative, if 1 and its positive marios is going down. 0 is neutral
 YVel:           .res 2       ; Player Y (signed) velocity (in pixels per 256 frames)
@@ -63,7 +68,6 @@ ActorsArray:    .res MAX_ACTORS * .sizeof(Actor)
 
 
 
-
 BufPtr:         .res 2       ; Pointer to the buffer address - 16bits (lo,hi)
 
 
@@ -86,16 +90,20 @@ ParamHiByte:     .res 1       ; Used as parameter to subroutine
 
 PrevOAMCount:   .res 1       ; Store the previous number of bytes that were sent to the OAM
 
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; RAM located at $0300 until $0800
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-.segment "RAM"
 Clock60:        .res 1       ; Counter that increments per second (60 frames)
 PlayerOneLives: .res 1       ; Lives for Mario
 Score:          .res 4       ; Score (1s, 10s, 100s, and 1000s digits in decimal)
 MenuItem:       .res 1       ; Keep track of the menu item that is selected
 CurrentGameState:      .res 1       ; Keep track of game state
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; RAM located at $0300 until $0800
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+; Th BG_BUF_ADDR is currently $0300
+; It will be used for reading the next column
+; I can move this around later to make room for other variables 
+.segment "RAM"
+
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -104,14 +112,67 @@ CurrentGameState:      .res 1       ; Keep track of game state
 .segment "CODE"
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Routine to draw a new column of tiles off-screen every 8 pixels
+;; Routine to read from ROM the attribute bytes that will be drawn for the next column
+;; This routine then writes a buffer to RAM that will the be read and used in 
+;; a routine that will be called in VBLANK 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-.proc DrawNewColumn
+.proc ReadROMWriteAttrToRam
+    ; (Column/4) * 8, since each row of attribute data in ROM is 8 bytes
+    lda Column                                                                  ; 3 (ZP)
+     ; Mask the lowest two bits to get the closest lowest multiple of 4    
+    and #%11111100                                                              ; 2 (immediate)
+     ; One shift left equivelant to a multiplication by 2
+    asl                                                                         ; 2                  
+    ; Stores the lo-byte of the source attribute address offset (in ROM)       
+    sta SourceAddr                                                              ; 4 (absolute) 
+    ; Proceed to compute the hi-byte of the source address offset in ROM
+    lda Column                                                                  ; 3 (ZP)
+    lsr                      ; /2                                               ; 2
+    lsr                      ; /4                                               ; 2
+    lsr                      ; /8                                               ; 2
+    lsr                      ; /16                                              ; 2
+    lsr                      ; /32                                              ; 2
+    lsr                      ; /64                                              ; 2
+    lsr                      ; /128, shift right 7 times to divide by 128       ; 2
+    sta SourceAddr+1         ; Stores the hi-byte of the Source address offset  ; 4 (absolute)
+
+    lda SourceAddr                                                              ; 3 (ZP) - 71
+    clc                                                                         ; 2
+    ; Add the lo-byte of the base address where AttributeData is in ROM 
+    adc ParamLoByte                                                             ; 3 (ZP)
+    ; Stores the result of the add back into the lo-byte of the SourceAddr
+    sta SourceAddr                                                              ; 4 (absolute)
+
+    lda SourceAddr+1                                                            ; 4 (absolute)
+    ; Add the hi-byte of the base address where AttributeData is in ROM
+    adc ParamHiByte                                                             ; 3 (ZP) - 87
+    ; Stores the result of the add back into the hi-byte of the SourceAddr
+    sta SourceAddr+1          
+
+    ldy #0
+    :
+        lda (SourceAddr),y                                                      ; 5 (indirect, +1 if goes across boundary)
+        sta BG_ATTR_BUF_ADDR,y
+        iny
+        cpy #8
+        bne :-
+    
+    rts
+.endproc
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Routine to read from ROM the bytes that will be drawn for the next column
+;; This routine then writes a buffer to RAM that will the be read and used in 
+;; a routine that will be called in VBLANK 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+.proc ReadROMWriteRam
     lda XScroll              ; We'll set the NewColAddr lo-byte and hi-byte     ; 3 cycles
     lsr                                                                         ; 2             - 5
     lsr                                                                         ; 2             - 7
     lsr                      ; Shift right 3 times to divide XScroll by 8       ; 2 (Accumulator)- 9
-     ; PPU ADDRESS
+
+    ; PPU ADDRESS
     sta NewColAddr           ; Set the lo-byte of the column address            ; 3 (ZP)        - 12
 
     lda CurrNametable        ; The hi-byte comes from the nametable             ; 3 (ZP)        - 15
@@ -150,63 +211,188 @@ CurrentGameState:      .res 1       ; Keep track of game state
     lda SourceAddr+1         ; Hi-byte of the column source address             ; 3 (ZP)        - 69
     adc ParamHiByte     ; Add the hi-byte                                       ; 3 (ZP)        - 72
     ; Add the result of the offset back to the source address hi-byte
-    sta SourceAddr+1                                                            ; 3 (ZP)        - 75
+    sta SourceAddr+1                                                            ; 3 (ZP)        - 75 
 
-; Jake
-    DrawColumn:
-      lda #%00000100                                                            ; 3             - 78
-      ; Tell the PPU that the increments will be +32 mode
-      sta PPU_CTRL                                                              ; 4 (absolute)  - 82
+    ; We'll loop 30 times ( there are 30 rows )                                 
+    ldx #30                                                                     ; 2 (immediate) - 77
+    ldy #0                                                                      ; 2 (immediate) - 79
 
-      lda PPU_STATUS         ; Hit PPU_STATUS to reset hi/lo address latch      ; 4 (absolute)  - 86
-      lda NewColAddr+1                                                          ; 3 (ZP)        - 89
-      sta PPU_ADDR           ; Set the hi-byte of the new column start address  ; 4 (absolute)  - 93
-      lda NewColAddr                                                            ; 3 (ZP)        - 96
-      sta PPU_ADDR           ; Set the lo-byte of the new column start address  ; 4 (absolute)  - 100
+    Loop:
+        lda (SourceAddr),y                                                          ; 5+ (indirect, +1 across pg)
+        sta BG_BUF_ADDR,y                                                           ; 5 absolute
 
-      ldx #30                ; We'll loop 30 times (=30 rows)                   ; 2 (immediate) - 102
-      ldy #0                                                                    ; 2 (immediate) - 104           - final good point correct everything
-    ; at start 104, (66 if go down path, 31 if you don't go down) (if you go down path and have 30 columns it will be 1980 + 96 =2076)
-    ; 31 if nothing collidable = 930 + 96 = 1,026
-      DrawColumnLoop:          
-        ; Copy from the address of the column source + y offset
-        lda (SourceAddr),y                                                      ; 5+(indirect, add 1 cycle if page boundary crossed = 6)   98
-        sta PPU_DATA                                                            ; 4 (abs)   104
+        pha                                                                     ; 3
 
-        pha                                                                     ; 3 (def)   108
-
-        
-        lda CurrentGameState                                                    ; 4 (ZP)    111
-        cmp #GameState::TITLE                                                   ; 2 (imm?)  115
-        beq E                                                                   ; 3/2       117
-            pla                                                                 ; 4         120
-            ; jsr AddToCollidablesArray
-
-            cmp #$29                                                            ; 2 (im)    124 
-            bne :+                                                              ; 3/2       126
-              SetYParam:
-                pha      ; push A first                                         ; 3         129
-                txa                                                             ; 2         131
-                pha       ; push old x up                                       ; 3         134 at this point
-
-                ; Paste here from HOLD THIS CODE 
-                pla                                     ; 4
-                tax                                     ; 2
-                pla     ; pull A                        ; 4
-            :
-            jmp :+                                     ; 3 
-        E:
+        lda CurrentGameState                                                    ; 4 (ZP)    
+        cmp #GameState::TITLE                                                   ; 2 (imm?)  
+        beq :+                                                                   ; 3/2       
+            pla                                                                 ; 4         
+            jsr AddToCollidablesArray
+            jmp :++                                     ; 3 
+        :
         bne :+                                         ; 3/2
             pla                                        ; 4
         :
 
 
-        iny                  ; Y++                     ; 2
-        dex                  ; X--                     ; 2    
-        ; Loop 30 times to draw all 30 rows of this column
-        bne DrawColumnLoop                             ; 3/2
-    rts                                                ; 6
+     
+        iny                                                                         ; 2
+        dex                                                                         ; 2
+        bne Loop                                                                      ; 3/2 
+    rts
 .endproc
+
+; ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+; ;; Routine to draw a new column of tiles off-screen every 8 pixels
+; ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+; UPDATED 
+.proc DrawNewColumn
+    lda XScroll              ; We'll set the NewColAddr lo-byte and hi-byte     ; 3 cycles
+    lsr                                                                         ; 2             - 5
+    lsr                                                                         ; 2             - 7
+    lsr                      ; Shift right 3 times to divide XScroll by 8       ; 2 (Accumulator)- 9
+     ; PPU ADDRESS
+    sta NewColAddr           ; Set the lo-byte of the column address            ; 3 (ZP)  
+
+    lda CurrNametable        ; The hi-byte comes from the nametable             ; 3 (ZP)        - 15
+    eor #1                   ; Invert the low bit (0 or 1)                      ; 2 (immediate) - 17
+    asl                                                                         ; 2 (accumulator)-19
+    asl                      ; Multiply by 4 (A is $00 or $04)                  ; 2 (accumulator)-21
+    clc                                                                         ; 2 ( default)   -23
+    adc #$20                 ; Add $20 (A is $20 or $24) for nametabe 0 or 1    ; 2 (immediate)  - 25
+    ; Set the hi-byte of the column address ($20xx or $24xx)
+    sta NewColAddr+1                                                            ; 3 (ZP)        - 27
+
+    DrawColumn:
+        lda #%00000100                                                            ; 3             
+        ; Tell the PPU that the increments will be +32 mode
+        sta PPU_CTRL                                                              ; 4 (absolute)  
+
+        lda PPU_STATUS         ; Hit PPU_STATUS to reset hi/lo address latch      ; 4 (absolute) 
+        lda NewColAddr+1                                                          ; 3 (ZP)      
+        sta PPU_ADDR           ; Set the hi-byte of the new column start address  ; 4 (absolute)
+        lda NewColAddr                                                            ; 3 (ZP)        
+        sta PPU_ADDR           ; Set the lo-byte of the new column start address  ; 4 (absolute) 
+
+        ; ldx #30                ; We'll loop 30 times (=30 rows)                   ; 2 (immediate) 
+        ldy #0                                                                    ; 2 (immediate)           - final good point correct everything
+
+        :
+            lda BG_BUF_ADDR,y
+            sta PPU_DATA
+            iny
+            cpy #30         ; 30 times = 30 rows
+            bne :-
+
+    rts 
+
+.endproc
+
+; ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+; ;; Routine to draw a new column of tiles off-screen every 8 pixels
+; ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+; ; DEPRECATED
+; .proc DrawNewColumn
+;     lda XScroll              ; We'll set the NewColAddr lo-byte and hi-byte     ; 3 cycles
+;     lsr                                                                         ; 2             - 5
+;     lsr                                                                         ; 2             - 7
+;     lsr                      ; Shift right 3 times to divide XScroll by 8       ; 2 (Accumulator)- 9
+;      ; PPU ADDRESS
+;     sta NewColAddr           ; Set the lo-byte of the column address            ; 3 (ZP)        - 12
+
+    ; lda CurrNametable        ; The hi-byte comes from the nametable             ; 3 (ZP)        - 15
+    ; eor #1                   ; Invert the low bit (0 or 1)                      ; 2 (immediate) - 17
+    ; asl                                                                         ; 2 (accumulator)-19
+    ; asl                      ; Multiply by 4 (A is $00 or $04)                  ; 2 (accumulator)-21
+    ; clc                                                                         ; 2 ( default)   -23
+    ; adc #$20                 ; Add $20 (A is $20 or $24) for nametabe 0 or 1    ; 2 (immediate)  - 25
+    ; ; Set the hi-byte of the column address ($20xx or $24xx)
+    ; sta NewColAddr+1                                                            ; 3 (ZP)         - 27
+
+;     lda Column               ; Multiply (col * 32) to compute the data offset   ; 3 (ZP)         - 30
+;     asl                                                                         ; 2 accumulator  - 32
+;     asl                                                                         ; 2              - 34
+;     asl                                                                         ; 2              - 36
+;     asl                                                                         ; 2              - 38
+;     asl                                                                         ; 2             - 40
+;     sta SourceAddr           ; Store lo-byte (--XX) of column source address    ; 3 (ZP)        - 43
+
+;     lda Column                                                                  ; 3 (ZP)        - 46
+;     ; Divide current Column by 8 (using 3 shift rights)
+;     lsr                                                                         ; 2             - 48
+;     lsr                                                                         ; 2             - 50
+;     lsr                                                                         ; 2             - 52
+;     ; Store hi-byte (XX--) of column source addres
+;     sta SourceAddr+1                                                            ; 3(ZP)         - 55
+
+;     ; Here we'll add the offset the column source address with the address of where the BackgroundData
+;     ; Lo-byte of the column data start + offset = address to load column data from
+;     lda SourceAddr                                                              ; 3(ZP)         - 58
+;     clc                                                                         ; 2             - 60
+;     adc ParamLoByte     ; Add the lo-byte                                       ; 3 (ZP)        - 63
+;     ; Save the result of the offset back to the source address lo-byte
+;     sta SourceAddr                                                              ; 3 (ZP)        - 66
+
+;     lda SourceAddr+1         ; Hi-byte of the column source address             ; 3 (ZP)        - 69
+;     adc ParamHiByte     ; Add the hi-byte                                       ; 3 (ZP)        - 72
+;     ; Add the result of the offset back to the source address hi-byte
+;     sta SourceAddr+1                                                            ; 3 (ZP)        - 75
+
+; ; Jake
+;     DrawColumn:
+;       lda #%00000100                                                            ; 3             - 78
+;       ; Tell the PPU that the increments will be +32 mode
+;       sta PPU_CTRL                                                              ; 4 (absolute)  - 82
+
+;       lda PPU_STATUS         ; Hit PPU_STATUS to reset hi/lo address latch      ; 4 (absolute)  - 86
+;       lda NewColAddr+1                                                          ; 3 (ZP)        - 89
+;       sta PPU_ADDR           ; Set the hi-byte of the new column start address  ; 4 (absolute)  - 93
+;       lda NewColAddr                                                            ; 3 (ZP)        - 96
+;       sta PPU_ADDR           ; Set the lo-byte of the new column start address  ; 4 (absolute)  - 100
+
+;       ldx #30                ; We'll loop 30 times (=30 rows)                   ; 2 (immediate) - 102
+;       ldy #0                                                                    ; 2 (immediate) - 104           - final good point correct everything
+;     ; at start 104, (66 if go down path, 31 if you don't go down) (if you go down path and have 30 columns it will be 1980 + 96 =2076)
+;     ; 31 if nothing collidable = 930 + 96 = 1,026
+;       DrawColumnLoop:          
+;         ; Copy from the address of the column source + y offset
+;         lda (SourceAddr),y                                                      ; 5+(indirect, add 1 cycle if page boundary crossed = 6)   98
+;         sta PPU_DATA                                                            ; 4 (abs)   104
+
+;         pha                                                                     ; 3 (def)   108
+
+        
+;         lda CurrentGameState                                                    ; 4 (ZP)    111
+;         cmp #GameState::TITLE                                                   ; 2 (imm?)  115
+;         beq E                                                                   ; 3/2       117
+;             pla                                                                 ; 4         120
+;             ; jsr AddToCollidablesArray
+
+;             cmp #$29                                                            ; 2 (im)    124 
+;             bne :+                                                              ; 3/2       126
+;               SetYParam:
+;                 pha      ; push A first                                         ; 3         129
+;                 txa                                                             ; 2         131
+;                 pha       ; push old x up                                       ; 3         134 at this point
+
+;                 ; Paste here from HOLD THIS CODE 
+;                 pla                                     ; 4
+;                 tax                                     ; 2
+;                 pla     ; pull A                        ; 4
+;             :
+;             jmp :+                                     ; 3 
+;         E:
+;         bne :+                                         ; 3/2
+;             pla                                        ; 4
+;         :
+
+
+;         iny                  ; Y++                     ; 2
+;         dex                  ; X--                     ; 2    
+;         ; Loop 30 times to draw all 30 rows of this column
+;         bne DrawColumnLoop                             ; 3/2
+;     rts                                                ; 6
+; .endproc
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Routine to draw attributes off-screen every 32 pixels
@@ -223,6 +409,8 @@ CurrentGameState:      .res 1       ; Keep track of game state
     sta NewColAddr+1                                                            ; 3 
 
     lda XScroll                                                                 ; 3 (ZP)
+    ; Store the previous value
+    sta PrevXScroll                                                                                              
     lsr                                                                         ; 2
     lsr                                                                         ; 2
     lsr                                                                         ; 2
@@ -232,38 +420,6 @@ CurrentGameState:      .res 1       ; Keep track of game state
     adc #$C0                                                                    ; 2 (immediate)
      ; The lo-byte contains (attribute base + XScroll/32)
     sta NewColAddr                                                              ; 3 (ZP)
-
-    ; (Column/4) * 8, since each row of attribute data in ROM is 8 bytes
-    lda Column                                                                  ; 3 (ZP)
-     ; Mask the lowest two bits to get the closest lowest multiple of 4    
-    and #%11111100                                                              ; 2 (immediate)
-     ; One shift left equivelant to a multiplication by 2
-    asl                                                                         ; 2                  
-    ; Stores the lo-byte of the source attribute address offset (in ROM)       
-    sta SourceAddr                                                              ; 4 (absolute) 
-    ; Proceed to compute the hi-byte of the source address offset in ROM
-    lda Column                                                                  ; 3 (ZP)
-    lsr                      ; /2                                               ; 2
-    lsr                      ; /4                                               ; 2
-    lsr                      ; /8                                               ; 2
-    lsr                      ; /16                                              ; 2
-    lsr                      ; /32                                              ; 2
-    lsr                      ; /64                                              ; 2
-    lsr                      ; /128, shift right 7 times to divide by 128       ; 2
-    sta SourceAddr+1         ; Stores the hi-byte of the Source address offset  ; 4 (absolute)
-
-    lda SourceAddr                                                              ; 3 (ZP) - 71
-    clc                                                                         ; 2
-    ; Add the lo-byte of the base address where AttributeData is in ROM 
-    adc ParamLoByte                                                             ; 3 (ZP)
-    ; Stores the result of the add back into the lo-byte of the SourceAddr
-    sta SourceAddr                                                              ; 4 (absolute)
-
-    lda SourceAddr+1                                                            ; 4 (absolute)
-    ; Add the hi-byte of the base address where AttributeData is in ROM
-    adc ParamHiByte                                                             ; 3 (ZP) - 87
-    ; Stores the result of the add back into the hi-byte of the SourceAddr
-    sta SourceAddr+1                                                            ; 4 (absolute) - 91
 
     DrawAttribute:
     ; Hit PPU_STATUS to reset the high/low address latch
@@ -277,7 +433,7 @@ CurrentGameState:      .res 1       ; Keep track of game state
         ; Write the lo-byte of attribute PPU destination address
         sta PPU_ADDR                                                            ; 4 (absolute)
         ; Fetch attribute byte from ROM
-        lda (SourceAddr),y                                                      ; 5 (indirect, +1 if goes across boundary)
+        lda BG_ATTR_BUF_ADDR,y                                                  ;
         ; Stores new attribute data into the PPU memory
         sta PPU_DATA                                                            ; 4 (absolute)
         iny                  ; Y++                                              ; 2 (default)
@@ -289,8 +445,94 @@ CurrentGameState:      .res 1       ; Keep track of game state
           sta NewColAddr     ; Next attribute will be at (NewColAddr + 8)       ; 4 (absolute)
           jmp DrawAttribLoop                                                    ; 3 (absolute)
        :
-    rts                                                                         ; 6 
+    rts   
+
 .endproc
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Routine to draw attributes off-screen every 32 pixels
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+; DEPRECATED
+; .proc DrawNewAttribs
+;     lda CurrNametable                                                           ; 3 (ZP)
+;     eor #1                   ; Invert low bit (0 or 1)                          ; 2 (immediate)
+;     asl                      ; Multiuply by 2, ($00 or $02)                     ; 2
+;     asl                      ; Multiply by 2 again ($00 or $04)                 ; 2
+;     clc                                                                         ; 2
+;     ; Add high byte of attribute base address ($23-- or $27--)
+;     adc #$23                                                                    ; 2            
+;     ; The hi-byte now has address = $23 or $27 for nametable 0 or 1
+;     sta NewColAddr+1                                                            ; 3 
+
+;     lda XScroll                                                                 ; 3 (ZP)
+;     lsr                                                                         ; 2
+;     lsr                                                                         ; 2
+;     lsr                                                                         ; 2
+;     lsr                                                                         ; 2
+;     lsr                      ; Divide by 32 (shift right 5 times)               ; 2
+;     clc                                                                         ; 2
+;     adc #$C0                                                                    ; 2 (immediate)
+;      ; The lo-byte contains (attribute base + XScroll/32)
+;     sta NewColAddr                                                              ; 3 (ZP)
+
+;     ; (Column/4) * 8, since each row of attribute data in ROM is 8 bytes
+;     lda Column                                                                  ; 3 (ZP)
+;      ; Mask the lowest two bits to get the closest lowest multiple of 4    
+;     and #%11111100                                                              ; 2 (immediate)
+;      ; One shift left equivelant to a multiplication by 2
+;     asl                                                                         ; 2                  
+;     ; Stores the lo-byte of the source attribute address offset (in ROM)       
+;     sta SourceAddr                                                              ; 4 (absolute) 
+;     ; Proceed to compute the hi-byte of the source address offset in ROM
+;     lda Column                                                                  ; 3 (ZP)
+;     lsr                      ; /2                                               ; 2
+;     lsr                      ; /4                                               ; 2
+;     lsr                      ; /8                                               ; 2
+;     lsr                      ; /16                                              ; 2
+;     lsr                      ; /32                                              ; 2
+;     lsr                      ; /64                                              ; 2
+;     lsr                      ; /128, shift right 7 times to divide by 128       ; 2
+;     sta SourceAddr+1         ; Stores the hi-byte of the Source address offset  ; 4 (absolute)
+
+;     lda SourceAddr                                                              ; 3 (ZP) - 71
+;     clc                                                                         ; 2
+;     ; Add the lo-byte of the base address where AttributeData is in ROM 
+;     adc ParamLoByte                                                             ; 3 (ZP)
+;     ; Stores the result of the add back into the lo-byte of the SourceAddr
+;     sta SourceAddr                                                              ; 4 (absolute)
+
+;     lda SourceAddr+1                                                            ; 4 (absolute)
+;     ; Add the hi-byte of the base address where AttributeData is in ROM
+;     adc ParamHiByte                                                             ; 3 (ZP) - 87
+;     ; Stores the result of the add back into the hi-byte of the SourceAddr
+;     sta SourceAddr+1                                                            ; 4 (absolute) - 91
+
+;     DrawAttribute:
+;     ; Hit PPU_STATUS to reset the high/low address latch
+;       bit PPU_STATUS                                                            ; 4 (absolute)
+;       ldy #0                 ; Y = 0                                            ; 2 (absolute)
+;       DrawAttribLoop:       ; This loop is 45 cycles, so 45 * 7 + 46 + 6= 367 ( 46 is the final branch)
+;         lda NewColAddr+1                                                        ; 3 (ZP)
+;         ; Write the hi-byte of attribute PPU destination address
+;         sta PPU_ADDR                                                            ; 4 (absolute)
+;         lda NewColAddr                                                          ; 3 (ZP)
+;         ; Write the lo-byte of attribute PPU destination address
+;         sta PPU_ADDR                                                            ; 4 (absolute)
+;         ; Fetch attribute byte from ROM
+;         lda (SourceAddr),y                                                      ; 5 (indirect, +1 if goes across boundary)
+;         ; Stores new attribute data into the PPU memory
+;         sta PPU_DATA                                                            ; 4 (absolute)
+;         iny                  ; Y++                                              ; 2 (default)
+;         cpy #8                                                                  ; 2 (immediate)
+;         beq :+               ; Loop 8 times (to copy 8 attribute bytes)         ; 3/2 (if taken/not taken)
+;           lda NewColAddr                                                        ; 3 (ZP)
+;           clc                                                                   ; 2 
+;           adc #8                                                                ; 3 (ZP)
+;           sta NewColAddr     ; Next attribute will be at (NewColAddr + 8)       ; 4 (absolute)
+;           jmp DrawAttribLoop                                                    ; 3 (absolute)
+;        :
+;     rts                                                                         ; 6 
+; .endproc
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Subroutine to manipulate the pixel placements for all the sprites properly
@@ -787,6 +1029,7 @@ Main:
         sta ParamHiByte
     
     InitBackGroundLoop:
+        jsr ReadROMWriteRam
         jsr DrawNewColumn
 
         ; Increment XScroll by 8
@@ -805,7 +1048,8 @@ Main:
         sta CurrNametable       
         lda #1
         sta XScroll
-        
+
+        jsr ReadROMWriteRam
         jsr DrawNewColumn       ; Draw first column of second nametable
         inc Column              ; Column ++
 
@@ -825,6 +1069,7 @@ Main:
         sta ParamHiByte                 
 
     InitAttributesLoop:
+        jsr ReadROMWriteAttrToRam                                                             ; 6 (absolute)
         jsr DrawNewAttribs
         lda XScroll
         clc
@@ -842,6 +1087,8 @@ Main:
         sta CurrNametable
         lda #1
         sta XScroll
+
+        jsr ReadROMWriteAttrToRam                                                             ; 6 (absolute)
         jsr DrawNewAttribs      ; Draw first attributes of the second nametable
 
         inc Column                    ; Column = 33
@@ -956,8 +1203,9 @@ Main:
         sta ParamHiByte     
     
     InitBackGroundLoop:
+        jsr ReadROMWriteRam
         jsr DrawNewColumn
-
+        
         ; Increment XScroll by 8
         lda XScroll
         clc
@@ -974,8 +1222,10 @@ Main:
         sta CurrNametable       
         lda #1
         sta XScroll
-        
-        jsr DrawNewColumn       ; Draw first column of second nametable
+    
+        jsr ReadROMWriteRam
+        jsr DrawNewColumn
+
         inc Column              ; Column ++
 
         ; column is 66 after this
@@ -996,7 +1246,9 @@ Main:
         sta ParamHiByte
 
     InitAttributesLoop:
-        jsr DrawNewAttribs
+        
+        jsr ReadROMWriteAttrToRam                                                             ; 6 (absolute)
+        jsr DrawNewAttribs     
         lda XScroll
         clc
         adc #32
@@ -1013,7 +1265,9 @@ Main:
         sta CurrNametable
         lda #1
         sta XScroll
-        jsr DrawNewAttribs      ; Draw first attributes of the second nametable
+        
+        jsr ReadROMWriteAttrToRam                                                             ; 6 (absolute)
+        jsr DrawNewAttribs           ; Draw first attributes of the second nametable
 
         inc Column                    ; Column = 66
 
@@ -1202,8 +1456,9 @@ Main:
 
     
     InitBackGroundLoop2:
-        jsr DrawNewColumn
 
+        jsr ReadROMWriteRam
+        jsr DrawNewColumn       ; Draw first column of second nametable
         ; Increment XScroll by 8
         lda XScroll
         clc
@@ -1221,7 +1476,10 @@ Main:
         lda #1
         sta XScroll
         
+
+        jsr ReadROMWriteRam
         jsr DrawNewColumn       ; Draw first column of second nametable
+        
         inc Column              ; Column ++
 
         lda #%10010000
@@ -1243,7 +1501,9 @@ Main:
 
 
     InitAttributesLoop2:
-        jsr DrawNewAttribs
+        jsr ReadROMWriteAttrToRam                                                             ; 6 (absolute)
+        jsr DrawNewAttribs      ; Draw first attributes of the second nametable
+
         lda XScroll
         clc
         adc #32
@@ -1260,6 +1520,9 @@ Main:
         sta CurrNametable
         lda #1
         sta XScroll
+        sta PrevXScroll
+
+        jsr ReadROMWriteAttrToRam                                                             ; 6 (absolute)
         jsr DrawNewAttribs      ; Draw first attributes of the second nametable
 
         inc Column                    ; Column = 33
@@ -1321,6 +1584,12 @@ EnableNMI:
         lda #1
         sta VerticalFlag
 
+        ; ; Set the BgBufPtr that points to ram
+        ; lda #$00
+        ; sta BgBufPtr
+        ; lda #$03
+        ; sta BgBufPtr+1
+
 
     GameLoop:
 
@@ -1331,6 +1600,35 @@ EnableNMI:
         jsr ImplementGravity
         jsr UpdateActors
         jsr RenderActors
+
+        CheckForNewColumn:
+            lda XScroll
+            cmp PrevXScroll
+            beq :+                          ; we don't want to write if it was already done
+                and #%00000111
+                bne :+
+                    lda #<Screen1Data       ; Lo byte                                              ; 2 (immediate i think, 4 if absolute)
+                    sta ParamLoByte                                                                ; 3 (ZP)
+                    lda #>Screen1Data       ; Hi byte                                              ; 2 (immediate i think, 4 if absolute)
+                    sta ParamHiByte    
+                    jsr ReadROMWriteRam
+        :
+        NewAttribsCheck:
+            lda XScroll                                                                        ; 3(ZP)
+            cmp PrevXScroll
+            beq :+
+                ; Check if the scroll is a multiple of 32 (lowest 5 bits are 00000)
+                and #%00011111                                                                     ; 2(Immediate)
+                ; If it isn't, we still don't need to draw new attributes
+                bne :+                                                                             ; 3/2(taken/not taken)
+                    lda #<Screen1AttributeData  ; lo byte                                          ; 2 (immediate, i think)
+                    sta ParamLoByte                                                                ; 3 (ZP)
+                    lda #>Screen1AttributeData                                                     ; 2 (immediate, i think)
+                    sta ParamHiByte                                                                ; 3 (ZP)
+                    ; It it is a multiple of 32, we draw the new attributes!
+                    jsr ReadROMWriteAttrToRam                                                             ; 6 (absolute)
+        :
+
 
     ; We want to clamp the GameLoop since it can happen many times per frame
     ClampGameLoop:
@@ -1350,10 +1648,10 @@ EnableNMI:
 NMI:
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
     ; NMI to start of rendering (NTSC): 2273.33 cycles 
-    ; Every single instruction total cycles : 161~
-    ; Draw Column: 2076/1,026~ if every sprite is a collidable/if none is a collidable
-    ; DrawNewAttribute: 367~ every column
-    ; 2,604/1,554  If every sprite is a collidable/ if none of the sprites were collidable 
+    ; DEPRECATED CALCUATION: Every single instruction total cycles : 161~
+    ; DEPRECATED CALCUATION: Draw Column: 2076/1,026~ if every sprite is a collidable/if none is a collidable
+    ; DEPRECATED CALCUATION: DrawNewAttribute: 367~ every column
+    ; DEPRECATED CALCUATION: 2,604/1,554  If every sprite is a collidable/ if none of the sprites were collidable 
     ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
@@ -1384,49 +1682,77 @@ NMI:
         dec MarioPeakJumpFrameCountdown                                                     ; 5
     :
 
-    NewColumnCheck:
-        lda XScroll                                                                         ; 3(ZP)
-        and #%00000111           ; Check if the scroll a multiple of 8                      ; 2(Immediate)
-        bne :+                   ; If it isn't, we still don't need to draw a new column    ; 3/2 (taken/not taken)
-            ; JAKE TODO LATER ADD CONDITIONAL TO DETERMINE WHERE BYTES START              
-            lda #<Screen1Data       ; Lo byte                                              ; 2 (immediate i think, 4 if absolute)
-            sta ParamLoByte                                                                ; 3 (ZP)
-            lda #>Screen1Data       ; Hi byte                                              ; 2 (immediate i think, 4 if absolute)
-            sta ParamHiByte                                                                ; 3 (ZP)
-             ; If it is a multiple of 8, we proceed to draw a new column of tiles!
-            jsr DrawNewColumn                                                              ; 6 (Absolute)
-            Clamp128Cols:
-                lda Column                                                                 ; 3(ZP)
-                clc                                                                        ; 2 
-                adc #1               ; Column++                                            ; 2 (immediate)
-                and #%01111111       ; Drop the left-most bit to wrap around 128           ; 2 (immediate) 
-                sta Column           ; Clamping the value to never go beyond 128           ; 3 (ZP)
+    SwitchNametable:
+    lda XScroll                                                                         ; 3(ZP)
+    bne :+           ; Check if XScroll rolled back to 0, then we swap nametables!      ; 3/2 (taken/not taken)
+        lda CurrNametable                                                               ; 3 (ZP)
+        eor #1                 ; An XOR with %00000001 will flip the right-most bit.    ; 2 (immediate)
+        sta CurrNametable      ; If it was 0, it becomes 1. If it was 1, it becomes 0.  ; 3 (ZP)
+    :
+
+    CheckToDrawNewColumn:
+        lda XScroll
+        cmp PrevXScroll
+        beq :+
+            and #%00000111
+            bne :+
+                jsr DrawNewColumn
+                Clamp128Cols:
+                    lda Column                                                                 ; 3(ZP)
+                    clc                                                                        ; 2 
+                    adc #1               ; Column++                                            ; 2 (immediate)
+                    and #%01111111       ; Drop the left-most bit to wrap around 128           ; 2 (immediate) 
+                    sta Column           ; Clamping the value to never go beyond 128           ; 3 (ZP)
         :
 
-    NewAttribsCheck:
-        lda XScroll                                                                        ; 3(ZP)
-        ; Check if the scroll is a multiple of 32 (lowest 5 bits are 00000)
-        and #%00011111                                                                     ; 2(Immediate)
-        ; If it isn't, we still don't need to draw new attributes
-        bne :+                                                                             ; 3/2(taken/not taken)
-            lda #<Screen1AttributeData  ; lo byte                                          ; 2 (immediate, i think)
-            sta ParamLoByte                                                                ; 3 (ZP)
-            lda #>Screen1AttributeData                                                     ; 2 (immediate, i think)
-            sta ParamHiByte                                                                ; 3 (ZP)
-            ; It it is a multiple of 32, we draw the new attributes!
-            jsr DrawNewAttribs                                                             ; 6 (absolute)
-        :
+    CheckToDrawNewAttribs:
+        lda XScroll
+        cmp PrevXScroll
+        beq :+
+        ;     Check if the scroll is a multiple of 32 (lowest 5 bits are 00000)
+            and #%00011111                                                                     ; 2(Imediate)
+        ;     ; If it isn't, we still don't need to draw new attributes
+            bne :+                                                                             ; 3/2(taken/not taken)
+                ; It it is a multiple of 32, we draw the new attributes!
+                jsr DrawNewAttribs                                                             ; 6 (absolute)
+            :
+
+    ; NewColumnCheck:
+    ;     lda XScroll                                                                         ; 3(ZP)
+    ;     and #%00000111           ; Check if the scroll a multiple of 8                      ; 2(Immediate)
+    ;     bne :+                   ; If it isn't, we still don't need to draw a new column    ; 3/2 (taken/not taken)
+    ;         ; JAKE TODO LATER ADD CONDITIONAL TO DETERMINE WHERE BYTES START              
+    ;         lda #<Screen1Data       ; Lo byte                                              ; 2 (immediate i think, 4 if absolute)
+    ;         sta ParamLoByte                                                                ; 3 (ZP)
+    ;         lda #>Screen1Data       ; Hi byte                                              ; 2 (immediate i think, 4 if absolute)
+    ;         sta ParamHiByte                                                                ; 3 (ZP)
+    ;          ; If it is a multiple of 8, we proceed to draw a new column of tiles!
+    ;         jsr DrawNewColumn                                                              ; 6 (Absolute)
+    ;         Clamp128Cols:
+    ;             lda Column                                                                 ; 3(ZP)
+    ;             clc                                                                        ; 2 
+    ;             adc #1               ; Column++                                            ; 2 (immediate)
+    ;             and #%01111111       ; Drop the left-most bit to wrap around 128           ; 2 (immediate) 
+    ;             sta Column           ; Clamping the value to never go beyond 128           ; 3 (ZP)
+    ;     :
+
+    ; NewAttribsCheck:
+    ;     lda XScroll                                                                        ; 3(ZP)
+    ;     ; Check if the scroll is a multiple of 32 (lowest 5 bits are 00000)
+    ;     and #%00011111                                                                     ; 2(Immediate)
+    ;     ; If it isn't, we still don't need to draw new attributes
+    ;     bne :+                                                                             ; 3/2(taken/not taken)
+    ;         lda #<Screen1AttributeData  ; lo byte                                          ; 2 (immediate, i think)
+    ;         sta ParamLoByte                                                                ; 3 (ZP)
+    ;         lda #>Screen1AttributeData                                                     ; 2 (immediate, i think)
+    ;         sta ParamHiByte                                                                ; 3 (ZP)
+    ;         ; It it is a multiple of 32, we draw the new attributes!
+    ;         jsr DrawNewAttribs                                                             ; 6 (absolute)
+    ;     :
 
         
     
     ScrollBackground:
-        
-        lda XScroll                                                                         ; 3(ZP)
-        bne :+           ; Check if XScroll rolled back to 0, then we swap nametables!      ; 3/2 (taken/not taken)
-            lda CurrNametable                                                               ; 3 (ZP)
-            eor #1                 ; An XOR with %00000001 will flip the right-most bit.    ; 2 (immediate)
-            sta CurrNametable      ; If it was 0, it becomes 1. If it was 1, it becomes 0.  ; 3 (ZP)
-        :
         lda XScroll                                                                         ; 3(ZP)
         sta PPU_SCROLL           ; Set the horizontal X scroll first                        ; 4 (Absolute)
         lda #0                                                                              ; 2 (Immediate)
@@ -1768,8 +2094,8 @@ BlankScreenData:                    ; left side                                 
 EndBlankScreen:
 Screen1Data:                ; left side
     ;      1   2   3   4   5   6   7   8   9   10  11  12  13  14  15 16   17 18  19   20  21  22  23  24  25  26  27  28  29  30  31 32
-    .byte $24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$45,$47,$47,$47,$47 ; 1 top to bottom --->
-    .byte $24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$45,$47,$47,$47,$47 ; 2
+    .byte $01,$01,$01,$01,$01,$01,$01,$01,$01,$01,$01,$01,$01,$01,$01,$01,$01,$01,$01,$01,$01,$01,$01,$01,$01,$01,$01,$45,$47,$47,$47,$47 ; 1 top to bottom --->
+    .byte $04,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$45,$47,$47,$47,$47 ; 2
     .byte $24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$45,$47,$47,$47,$47 ; 3
     .byte $24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$45,$47,$47,$47,$47 ; 4
     .byte $24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$45,$47,$47,$47,$47 ; 5
@@ -1790,24 +2116,24 @@ Screen1Data:                ; left side
     .byte $24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$45,$47,$47,$47,$47 ; 20
     .byte $24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$45,$47,$47,$47,$47 ; 21
     .byte $24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$45,$47,$47,$47,$47 ; 22 
-    .byte $24,$24,$24,$24,$24,$31,$32,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$45,$47,$47,$47,$47 ; 23
-    .byte $24,$24,$24,$24,$30,$26,$34,$33,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$45,$47,$47,$47,$47 ; 24
-    .byte $24,$24,$24,$30,$26,$34,$26,$34,$33,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$36,$37,$36,$45,$47,$47,$47,$47 ; 25
-    .byte $24,$24,$30,$26,$26,$26,$26,$26,$26,$33,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$35,$25,$25,$25,$45,$47,$47,$47,$47 ; 26
-    .byte $45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45 ; 27
-    .byte $24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$45,$47,$47,$47,$47 ; 28
-    .byte $24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$45,$47,$47,$47,$47 ; 29 
-    .byte $24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$45,$47,$47,$47,$47 ; 30
+    .byte $24,$24,$24,$24,$24,$31,$32,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$29,$24,$24,$24,$24,$24,$24,$24,$45,$47,$47,$47,$47 ; 23
+    .byte $24,$24,$24,$24,$30,$26,$34,$33,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$29,$24,$24,$24,$24,$24,$24,$24,$45,$47,$47,$47,$47 ; 24
+    .byte $24,$24,$24,$30,$26,$34,$26,$34,$33,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$29,$24,$24,$24,$24,$36,$37,$36,$45,$47,$47,$47,$47 ; 25
+    .byte $24,$24,$30,$26,$26,$26,$26,$26,$26,$33,$24,$24,$24,$24,$24,$24,$24,$24,$24,$29,$24,$24,$24,$35,$25,$25,$25,$45,$47,$47,$47,$47 ; 26
+    .byte $45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$29,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45,$45 ; 27
+    .byte $24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$29,$24,$24,$24,$24,$24,$24,$24,$45,$47,$47,$47,$47 ; 28
+    .byte $24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$29,$24,$24,$24,$24,$24,$24,$24,$45,$47,$47,$47,$47 ; 29 
+    .byte $24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$29,$24,$24,$24,$24,$24,$24,$24,$45,$47,$47,$47,$47 ; 30
     .byte $24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$45,$47,$47,$47,$47 ; 31 
-    .byte $24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$45,$47,$47,$47,$47 ; 32
+    .byte $01,$01,$01,$01,$01,$01,$01,$01,$01,$01,$01,$01,$01,$01,$01,$01,$01,$01,$01,$01,$01,$01,$01,$01,$01,$01,$01,$45,$47,$47,$47,$47  ; 32
     ; right side
     ; .byte $24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$45,$47,$47,$47,$47 ; 33
 EndScreen1:
 ScreenData2:
         ;      1   2   3   4   5   6   7   8   9   10  11  12  13  14  15 16   17 18  19   20  21  22  23  24  25  26  27  28  29  30  31 32
-    .byte $24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$45,$47,$47,$47,$47 ; 1 top to bottom --->
+    .byte $02,$02,$02,$02,$02,$02,$02,$02,$02,$02,$02,$02,$02,$02,$02,$02,$02,$02,$02,$02,$02,$02,$02,$02,$02,$02,$02,$45,$47,$47,$47,$47 ; 1 top to bottom --->
     .byte $27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27,$27 ; 2
-    .byte $29,$29,$29,$29,$29,$29,$29,$29,$29,$29,$29,$29,$29,$29,$29,$29,$29,$29,$29,$29,$29,$29,$29,$29,$29,$29,$29,$29,$29,$29,$29,$29; 3
+    .byte $24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24; 3
     .byte $24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$29,$24,$24,$24,$45,$47,$47,$47,$47 ; 4
     .byte $24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$29,$24,$24,$24,$45,$47,$47,$47,$47 ; 5
     .byte $24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$29,$24,$24,$24,$45,$47,$47,$47,$47 ; 6 
@@ -1836,12 +2162,12 @@ ScreenData2:
     .byte $24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$45,$47,$47,$47,$47 ; 29 
     .byte $24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$45,$47,$47,$47,$47 ; 30
     .byte $24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$45,$47,$47,$47,$47 ; 31 
-    .byte $24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$45,$47,$47,$47,$47 ; 32  64
+    .byte $02,$02,$02,$02,$02,$02,$02,$02,$02,$02,$02,$02,$02,$02,$02,$02,$02,$02,$02,$02,$02,$02,$02,$02,$02,$02,$02,$45,$47,$47,$47,$47 ; 32  64
     ; right side
 EndScreen2:
 Screen3Data:
     ;      1   2   3   4   5   6   7   8   9   10  11  12  13  14  15 16   17 18  19   20  21  22  23  24  25  26  27  28  29  30  31 32
-    .byte $24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$45,$47,$47,$47,$47 ; 1 top to bottom --->
+    .byte $03,$03,$03,$03,$03,$03,$03,$03,$03,$03,$03,$03,$03,$03,$03,$03,$03,$03,$03,$03,$03,$03,$03,$03,$03,$03,$03,$45,$47,$47,$47,$47 ; 1 top to bottom --->
     .byte $24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$45,$47,$47,$47,$47 ; 2
     .byte $24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$45,$47,$47,$47,$47 ; 3
     .byte $24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$45,$47,$47,$47,$47 ; 4
@@ -1872,12 +2198,12 @@ Screen3Data:
     .byte $24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$45,$47,$47,$47,$47 ; 29 
     .byte $24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$45,$47,$47,$47,$47 ; 30
     .byte $24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$45,$47,$47,$47,$47 ; 31 
-    .byte $24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$45,$47,$47,$47,$47 ; 32  96
+    .byte $03,$03,$03,$03,$03,$03,$03,$03,$03,$03,$03,$03,$03,$03,$03,$03,$03,$03,$03,$03,$03,$03,$03,$03,$03,$03,$03,$45,$47,$47,$47,$47 ; 32  96
     ; right side
 EndScreen3:
 Screen4Data:
     ;      1   2   3   4   5   6   7   8   9   10  11  12  13  14  15 16   17 18  19   20  21  22  23  24  25  26  27  28  29  30  31 32
-    .byte $29,$29,$29,$29,$29,$29,$29,$29,$29,$29,$29,$29,$29,$29,$29,$29,$29,$29,$29,$29,$29,$29,$29,$29,$29,$29,$29,$29,$29,$29,$29,$29 ; 1 top to bottom ---->
+    .byte $04,$04,$04,$04,$04,$04,$04,$04,$04,$04,$04,$04,$04,$04,$04,$04,$04,$04,$04,$04,$04,$04,$04,$04,$04,$04,$04,$04,$04,$04,$04,$04 ; 1 top to bottom ---->
     .byte $24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$45,$47,$47,$47,$47 ; 2
     .byte $24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$45,$47,$47,$47,$47 ; 3
     .byte $24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$45,$47,$47,$47,$47 ; 4
@@ -1908,11 +2234,11 @@ Screen4Data:
     .byte $24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$45,$47,$47,$47,$47 ; 29 
     .byte $24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$45,$47,$47,$47,$47 ; 30
     .byte $24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$45,$47,$47,$47,$47 ; 31 
-    .byte $24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$45,$47,$47,$47,$47 ; 32  128
+    .byte $04,$04,$04,$04,$04,$04,$04,$04,$04,$04,$04,$04,$04,$04,$04,$04,$04,$04,$04,$04,$04,$04,$04,$04,$04,$04,$04,$04,$04,$04,$04,$04 ; 32  128
     ; right side
 EndScreen4:
 Screen5Data:
-    .byte $24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$45,$47,$47,$47,$47 ; 1 top to bottom --->
+    .byte $05,$05,$05,$05,$05,$05,$05,$05,$05,$05,$05,$05,$05,$05,$05,$05,$05,$05,$05,$05,$05,$05,$05,$05,$05,$05,$05,$45,$47,$47,$47,$47 ; 1 top to bottom --->
     .byte $24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$45,$47,$47,$47,$47 ; 2
     .byte $24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$45,$47,$47,$47,$47 ; 3
     .byte $24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$45,$47,$47,$47,$47 ; 4
@@ -1943,7 +2269,7 @@ Screen5Data:
     .byte $24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$45,$47,$47,$47,$47 ; 29 
     .byte $24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$45,$47,$47,$47,$47 ; 30
     .byte $24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$45,$47,$47,$47,$47 ; 31 
-    .byte $24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$24,$45,$47,$47,$47,$47 ; 32  160
+    .byte $05,$05,$05,$05,$05,$05,$05,$05,$05,$05,$05,$05,$05,$05,$05,$05,$05,$05,$05,$05,$05,$05,$05,$05,$05,$05,$05,$45,$47,$47,$47,$47 ; 32  160
 EndScreen5:
 
 
