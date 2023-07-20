@@ -87,8 +87,8 @@
 .proc CheckCollidableCollision
 
   CollisionLoop:
-    lda Collision
-    bne FinishCollisionCheck ; If it is not equal to 0 jump to finish collision check, means there was already a collision on this loop
+  ;  lda Collision
+  ;   bne FinishCollisionCheck ; If it is not equal to 0 jump to finish collision check, means there was already a collision on this loop
       cpx #MAX_COLLIDABLES * .sizeof(Collidable)   ; We loop all entities, looking for enemies (airplanes)
       beq FinishCollisionCheck
         lda CollidablesArray+Collidable::Type,x    ; Load the type of the actor we are looping
@@ -99,10 +99,6 @@
         lda CollidablesArray+Collidable::XPos,x    ; Bounding Box X1
         sta ParamRectX1
         lda CollidablesArray+Collidable::YPos,x    ; Bouding Box Y1
-        ; TODO FIX: THIS IS HACKY JAKE, THIS IS JUST USED TO GET THE COLLISION JUST RIGHT
-        sec
-        sbc #3
-        ;
         sta ParamRectY1
 
         lda CollidablesArray+Collidable::XPos,x
@@ -137,48 +133,7 @@
 .endproc
 
 
-.proc DidUnderCollisionOccur
-    lda ParamXPos                      ; Fetch the point X coordinate
-    cmp ParamRectX1                    ; Compare it with the enemy rectangle X
-    bcc PointIsOutside                 ; If it's less, we stop checking because there is no collision
 
-    lda ParamYPos                      ; Fetch the point Y coordinate
-    cmp ParamRectY1                    ; Compare it with the enemy bounding box Y value
-    bcc PointIsOutside                 ; If it's less, we stop checking because there is no collision
-
-    lda ParamXPos                      ; Fetch the point X coorrinate
-    cmp ParamRectX2                    ; Compare it with the enemy bounding box right
-    bcs PointIsOutside                 ; If it's greater than, we stop checking because there is no collision
-
-    lda ParamYPos                      ; Fetch the point X coorrinate
-    cmp ParamRectY2                    ; Compare it with the enemy bounding box right
-    bcs PointIsOutside                 ; If it's greater than, we stop checking because there is no collision
-
-    PointIsInside:
-      lda ParamYPos                             ; If we reach here, the point is inside the bounding box!
-      sta Collision                      ; Collision detected!
-
-      ; Let's have player running left or right if under collision is detected and they have velocity
-      lda XVel
-      bmi :+
-        ; if positive set to right
-        lda #MarioAnimations::RUNNING_RIGHT
-        bpl :++
-      : 
-        ; if negative set to left
-        lda #MarioAnimations::RUNNING_LEFT
-      :
-      sta MarioAnimationStates
-
-      jmp EndCollisionCheck
-
-    PointIsOutside:
-      lda #0                             ; If we branch here, the point was outside the bounding box
-      sta Collision                      ; No collision detected!
-
-  EndCollisionCheck:
-    rts
-.endproc
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Subroutine to add new collidable to the array in the first empty slot found
@@ -217,10 +172,10 @@ EndRoutine:
 
     ; Accumulator has the value to compare, it is already in the accumulator
     ; Is it a block we want? Yes
-    cmp #$45
+    cmp #$29
     bne :+      ; If not equal, check next value
     :
-    cmp #$29
+    cmp #$45
     bne :+  
       ; SetYParam:
         ; txa

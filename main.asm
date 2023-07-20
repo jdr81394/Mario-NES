@@ -7,6 +7,14 @@
 .include "./datatypes/marioAnimations.inc"
 
 .segment "ZEROPAGE"
+Collision:      .res 1       ; Flag if a collision happened or not
+ParamXPos:      .res 1       ; Used as parameter to subroutine
+ParamYPos:      .res 1       ; Used as parameter to subroutine
+ParamRectX1:    .res 1       ; Used as parameter to subroutine
+ParamRectY1:    .res 1       ; Used as parameter to subroutine
+ParamRectX2:    .res 1       ; Used as parameter to subroutine
+ParamRectY2:    .res 1       ; Used as parameter to subroutine
+
 CollidablesArray:    .res MAX_COLLIDABLES * .sizeof(Collidable)
 
 SourceAddr:     .res 2       ; The source address in ROM of the new column tiles
@@ -18,8 +26,7 @@ XScroll:        .res 1       ; Store the horizontal scroll position used to dete
 Column:         .res 1       ; Stores the column (of tiles) we are in the level in ROM
 
 
-ParamXPos:      .res 1       ; Used as parameter to subroutine
-ParamYPos:      .res 1       ; Used as parameter to subroutine
+
 
 
 BgPtr:          .res 2       ; Pointer to background address - 16bits (lo,hi)
@@ -41,9 +48,6 @@ MarioPeakJumpFrameCountdown: .res 1
 
 MarioAnimationFrameCountdown: .res 1 ; Holds the frame that this has started on, also holds number of frames until peak of marios jump
 
-Collision:      .res 1       ; Flag if a collision happened or not
-
-
 XPos:           .res 2       ; Player X 16-bit position (8.8 fixed-point): hi+lo/256px
 XVel:           .res 2       ; Player X (signed) velocity (in pixels per 256 frames)
 HorizontalFlag:  .res 1       ; Determines if player has positive or negative velocity, if greatest bit is 1, then negative, if 1 then positive, if 0, then neutral
@@ -59,19 +63,13 @@ VarX:           .res 1
 VarY:           .res 1
 
 
-ParamRectX1:    .res 1       ; Used as parameter to subroutine
-ParamRectY1:    .res 1       ; Used as parameter to subroutine
-ParamRectX2:    .res 1       ; Used as parameter to subroutine
-ParamRectY2:    .res 1       ; Used as parameter to subroutine
+
 
 ActorsArray:    .res MAX_ACTORS * .sizeof(Actor)
 
 
 
 BufPtr:         .res 2       ; Pointer to the buffer address - 16bits (lo,hi)
-
-
-
 
 Frame:          .res 1       ; Counts frames (0 to 255 and repeats)
 IsDrawComplete: .res 1       ; Flag to indicate when VBlank is done drawing
@@ -110,6 +108,58 @@ CurrentGameState:      .res 1       ; Keep track of game state
 ;; PRG-ROM code located at $8000
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 .segment "CODE"
+.proc DidUnderCollisionOccur
+    lda ParamXPos                      ; Fetch the point X coordinate
+    cmp ParamRectX1                    ; Compare it with the enemy rectangle X
+    bcc PointIsOutside                 ; If it's less, we stop checking because there is no collision
+
+    lda ParamYPos                      ; Fetch the point Y coordinate
+    cmp ParamRectY1                    ; Compare it with the enemy bounding box Y value
+    bcc PointIsOutside                 ; If it's less, we stop checking because there is no collision
+
+    lda ParamXPos                      ; Fetch the point X coorrinate
+    cmp ParamRectX2                    ; Compare it with the enemy bounding box right
+    bcs PointIsOutside                 ; If it's greater than, we stop checking because there is no collision
+
+    lda ParamYPos                      ; Fetch the point X coorrinate
+    cmp ParamRectY2                    ; Compare it with the enemy bounding box right
+    bcs PointIsOutside                 ; If it's greater than, we stop checking because there is no collision
+
+    PointIsInside:
+
+        ; Did he just land?
+        ; lda Collision
+        ; ; If it's not zero, skip, if its zero, go into code
+        ; bne :+++
+        ;     ; let's now set mario to running/standing
+        ;     lda XVel
+        ;     beq :+++
+        ;     bmi :+
+        ;         ; if positive set to right
+        ;         lda #MarioAnimations::RUNNING_RIGHT
+        ;         bpl :++
+        ;     : 
+        ;         ; if negative set to left
+        ;         lda #MarioAnimations::RUNNING_LEFT
+        ;     :
+        ;     sta MarioAnimationStates
+        ; :
+
+        lda ParamYPos                             ; If we reach here, the point is inside the bounding box!
+        sta Collision                      ; Collision detected!
+
+        ; Let's have player running left or right if under collision is detected and they have velocity
+
+        ; JumpToEndCollisionCheck:
+        jmp EndCollisionCheck
+
+    PointIsOutside:
+      lda #0                             ; If we branch here, the point was outside the bounding box
+      sta Collision                      ; No collision detected!
+
+  EndCollisionCheck:
+    rts
+.endproc
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Routine to read from ROM the attribute bytes that will be drawn for the next column
