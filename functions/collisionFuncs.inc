@@ -36,12 +36,12 @@
       bmi IfMinus
         ; First, let see if mario is jumping or just falling, if falling we handle it different
         lda MarioAnimationStates
-        cmp MarioAnimations::FALLING_LEFT
+        cmp #MarioAnimations::FALLING_LEFT
         bne :+     ; If not equal, then not falling left
             
             ; Do stuff here for falling left
         :
-        cmp MarioAnimations::FALLING_RIGHT    
+        cmp #MarioAnimations::FALLING_RIGHT    
         bne :+          ; If not equal, then not falling right
                 ; Do stuff here for falling left
         :
@@ -172,10 +172,10 @@ EndRoutine:
 
     ; Accumulator has the value to compare, it is already in the accumulator
     ; Is it a block we want? Yes
-    cmp #$45
+    cmp #$29
     bne :+      ; If not equal, check next value
     :
-    cmp #$29
+    cmp #$45
     bne End29
       ; SetYParam:
         ; txa

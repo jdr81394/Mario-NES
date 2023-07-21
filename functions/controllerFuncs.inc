@@ -30,13 +30,13 @@ LoopButtons:
       bne EndNoButtons
         ; Let's make sure mario is not in the air
         lda MarioAnimationStates
-        cmp MarioAnimations::JUMPING_RIGHT
+        cmp #MarioAnimations::JUMPING_RIGHT
         bcs CheckCollision
 
         ; The above and below ensure that its between 4 and 7
 
         lda MarioAnimationStates
-        cmp MarioAnimations::DEATH
+        cmp #MarioAnimations::DEATH
         bcc CheckCollision      
 
         SetToStanding:
@@ -125,7 +125,7 @@ LoopButtons:
             bcs PeakJumpAlreadyReached      ; If it is not equal, go to end
 
             ; ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-            ; The above comparisons ensure it is either 4 or 5
+            ; The above comparisons ensure it is either 4 or 5  
             lda #INITIAL_TAKEOFF
             sta YVel
             sta YVel+1
