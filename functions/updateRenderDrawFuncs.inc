@@ -119,7 +119,7 @@
             sta ActorsArray+Actor::Type,x
 
             jsr IncrementScore            ; Increment the Score variable using BCD-ish mode
-            jsr DrawScore                 ; Send the score bytes to the background buffer at $7000
+            ; jsr DrawScore                 ; Send the score bytes to the background buffer at $7000
 
           NoCollisionFound:
 
@@ -228,51 +228,51 @@
 ;;  |   PPU Address $2052
 ;;  Length=3
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-.proc DrawScore
-    lda #$70
-    sta BufPtr+1
-    lda #$00
-    sta BufPtr+0
+; .proc DrawScore
+;     lda #$70
+;     sta BufPtr+1
+;     lda #$00
+;     sta BufPtr+0
 
-    ldy #0
+;     ldy #0
     
-    lda #3                   ; Length = 3 (how many bytes we will send)
-    sta (BufPtr),y
-    iny
+;     lda #3                   ; Length = 3 (how many bytes we will send)
+;     sta (BufPtr),y
+;     iny
 
-    lda #$20
-    sta (BufPtr),y           ; Hi-Byte of the PPU address to be updated
-    iny
-    lda #$52
-    sta (BufPtr),y           ; Lo-Byte of the PPU address to be updated
-    iny
+;     lda #$20
+;     sta (BufPtr),y           ; Hi-Byte of the PPU address to be updated
+;     iny
+;     lda #$52
+;     sta (BufPtr),y           ; Lo-Byte of the PPU address to be updated
+;     iny
 
-    ;; Send the 3 digits of the score (from MSB to LSB) 100s, 10s, 1s
+;     ;; Send the 3 digits of the score (from MSB to LSB) 100s, 10s, 1s
 
-    lda Score+2              ; 100s digit of the Score
-    clc
-    adc #$60                 ; Offset by $60 to point to the correct tile
-    sta (BufPtr),y
-    iny
+;     lda Score+2              ; 100s digit of the Score
+;     clc
+;     adc #$60                 ; Offset by $60 to point to the correct tile
+;     sta (BufPtr),y
+;     iny
 
-    lda Score+1              ; 10s digit of the Score
-    clc
-    adc #$60                 ; Offset by $60 to point to the correct tile
-    sta (BufPtr),y
-    iny
+;     lda Score+1              ; 10s digit of the Score
+;     clc
+;     adc #$60                 ; Offset by $60 to point to the correct tile
+;     sta (BufPtr),y
+;     iny
 
-    lda Score+0              ; 1s digit of the Score
-    clc
-    adc #$60                 ; Offset by $60 to point to the correct tile
-    sta (BufPtr),y
-    iny
+;     lda Score+0              ; 1s digit of the Score
+;     clc
+;     adc #$60                 ; Offset by $60 to point to the correct tile
+;     sta (BufPtr),y
+;     iny
 
-    lda #0
-    sta (BufPtr),y           ; Length=0 to signal the end of the buffer
-    iny
+;     lda #0
+;     sta (BufPtr),y           ; Length=0 to signal the end of the buffer
+;     iny
 
-    rts
-.endproc
+;     rts
+; .endproc
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Returns a random 8-bit number inside A (0-255), clobbers Y (0).

@@ -134,36 +134,36 @@ IncreaseHiByte:
 ;;  |   PPU Address $2052
 ;;  Length=3
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-.proc BackgroundCopy
-BackgroundCopy:
-    lda #$70
-    sta BufPtr+1             
-    lda #$00
-    sta BufPtr+0             ; Set BufPtr pointer to start at address $7000
+; .proc BackgroundCopy
+; BackgroundCopy:
+;     lda #$70
+;     sta BufPtr+1             
+;     lda #$00
+;     sta BufPtr+0             ; Set BufPtr pointer to start at address $7000
 
-    ldy #$00
+;     ldy #$00
 
-    BufferLoop:    
-        lda (BufPtr),y         ; Fetch the length;
-        beq EndBackgroundCopy   ; 
+;     BufferLoop:    
+;         lda (BufPtr),y         ; Fetch the length;
+;         beq EndBackgroundCopy   ; 
 
-        tax                     ; x  = length
+;         tax                     ; x  = length
 
-        iny
-        lda (BufPtr),y           ; Fetch hi-byte of PPU address to be updated
-        sta PPU_ADDR
-        iny
-        lda (BufPtr),y           ; Fetch lo-byte of PPU address to be updated
-        sta PPU_ADDR
-        iny
-    DataLoop:
-        lda (BufPtr),y
-        sta PPU_DATA
-        iny
-        dex                      ; X--
-        bne DataLoop
+;         iny
+;         lda (BufPtr),y           ; Fetch hi-byte of PPU address to be updated
+;         sta PPU_ADDR
+;         iny
+;         lda (BufPtr),y           ; Fetch lo-byte of PPU address to be updated
+;         sta PPU_ADDR
+;         iny
+;     DataLoop:
+;         lda (BufPtr),y
+;         sta PPU_DATA
+;         iny
+;         dex                      ; X--
+;         bne DataLoop
 
-        jmp BufferLoop           ; Loop back until we finish the buffer (find an entry with Length=0)
-EndBackgroundCopy:
-    rts
-.endproc
+;         jmp BufferLoop           ; Loop back until we finish the buffer (find an entry with Length=0)
+; EndBackgroundCopy:
+;     rts
+; .endproc
