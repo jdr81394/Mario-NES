@@ -7,15 +7,22 @@
 .include "./datatypes/marioAnimations.inc"
 
 .segment "ZEROPAGE"
-LastAttribute:   .res 1      ; compare against the final attribute to know if its time to write a new attribute to rom
-Screen9Flag:   .res 1       ; Set to know we should use screen 9 as our new address
+CollidableCounterPtr: .res 2     ; Used in Looping for collidables, initialized to beginning address, dereference to get value
+CollidableEndAddrPtr:   .res 2      ; Used as a pointer to know where the end of the collidable array is
 PrevXScroll:    .res 1       ; Compare to previous position of XScroll so we don't write twice
 XScroll:        .res 1       ; Store the horizontal scroll position used to determine PPU ADDRESS for drawing
-CollidablesArray:    .res MAX_COLLIDABLES * .sizeof(Collidable)
 
-Collision:      .res 1       ; Flag if a collision happened or not
 ParamXPos:      .res 1       ; Used as parameter to subroutine
 ParamYPos:      .res 1       ; Used as parameter to subroutine
+
+
+LastAttribute:   .res 1      ; compare against the final attribute to know if its time to write a new attribute to rom
+Screen9Flag:   .res 1       ; Set to know we should use screen 9 as our new address
+
+; CollidablesArray:    .res MAX_COLLIDABLES * .sizeof(Collidable)
+
+
+Collision:      .res 1       ; Flag if a collision happened or not
 ParamRectX1:    .res 1       ; Used as parameter to subroutine
 ParamRectY1:    .res 1       ; Used as parameter to subroutine
 ParamRectX2:    .res 1       ; Used as parameter to subroutine
@@ -112,43 +119,323 @@ couldDrawColumn:    .res 1      ;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 .segment "CODE"
 
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Move collidables to the left
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 .proc MoveCollidables
+
+    ; TODO JAKE - Change this to use Y so we can actually loop through the values
+    tya
+    pha
+
+    ; Check to see if its the end
     ldx #0
-    ArrayLoop:
-        cpx #MAX_COLLIDABLES * .sizeof(Collidable)
-        beq EndRoutine
-        lda CollidablesArray+Collidable::Type,x
-        cmp #CollidableType::NULL              ; If the collidable type of this array position is NULL        
-        ; If not equal to NULL, then its a collidable and lets check it
-        bne MoveCollidable
-        IncrementCounter:
-            ; If equal to null, lets just increment and jump up to next collidable
-            txa
-            clc
-            adc #.sizeof(Collidable)               ; Otherwise, we offset to the check the next collidable in the array
-            tax                               ; X += sizeof(collidable)
-            jmp ArrayLoop
-        MoveCollidable:
-            ; Decrement position by 8 pixels since 1 XScroll = 8 pixels
-            lda CollidablesArray+Collidable::XPos,x                                
-            sec
-            sbc #1
-            ; dec CollidablesArray+Collidable::XPos,x
-            ; Check if it rolled over from 0 and turned negative, we remove from array
-            bcs :+
-                ; Its negative, so lets remove by just turning it NULL
-                lda #CollidableType::NULL
-                sta CollidablesArray+Collidable::Type,x
-            :
-            
-            sta CollidablesArray+Collidable::XPos,x      
-            jmp IncrementCounter
-    EndRoutine:
-        rts
+    ldy #0
+    lda #<COLLIDABLES_ADDR          ; low byte
+    sta CollidableCounterPtr
+
+    lda #>COLLIDABLES_ADDR          ; hi byte
+    sta CollidableCounterPtr+1
+
+    Loop:
+        lda CollidableCounterPtr
+        cmp CollidableEndAddrPtr
+        bne :+
+            ; If end address and counter ptr have same lower byte address just make sure not same upper address
+            lda CollidableCounterPtr+1
+            cmp CollidableEndAddrPtr+1
+            bne :+
+                ; Else Finish moving 
+                beq Finish
+        :
+        ; Let's see if its null 
+        lda (CollidableCounterPtr),y
+        cmp #CollidableType::NULL
+        bne :+
+            IncrementCounter:
+                ; Increement counter if its equal to NULL because there is no Collidable here
+                lda CollidableCounterPtr
+                clc
+                adc #.sizeof(Collidable)
+                sta CollidableCounterPtr
+                lda #0
+                adc CollidableCounterPtr+1
+                sta CollidableCounterPtr+1
+                ldy #0
+                jmp Loop
+        :
+        iny                                     ; Increment to get XPos
+        lda (CollidableCounterPtr),y              ; XPos                          
+        sec
+        sbc #1
+        ; Check if it rolled over from 0 and turned negative, we remove from array
+        bcs :+
+            ; Its negative, so lets remove by just turning it NULL
+            ; dey                             ; Get type again
+            ldy #0
+            lda #CollidableType::NULL
+            sta (CollidableCounterPtr),y
+
+            ; Lets check if the current endAddressPtr collidable can be decremented by checking the one before it
+            ; If current dereferenced value is null, move it down until it finds a non derefrenced
+
+            ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+            ;; THIS BELOW CODE MAKES IT CRASH , fix later to optimize
+            MoveDownLoop:
+                lda CollidableEndAddrPtr
+                sec
+                sbc #.sizeof(Collidable)
+                sta CollidableEndAddrPtr
+                bcs CarrySet
+                    lda CollidableEndAddrPtr+1
+                    sec 
+                    sbc #1 
+                    sta CollidableEndAddrPtr+1
+                CarrySet:
+                ; Dereference value and if there is a NULL value, move it down again, if not move it back up
+                   ;; [1] [1] [1] [1] [0] [] 
+                lda (CollidableEndAddrPtr),y
+                beq MoveDownLoop        ; Decrement it again if its 0
+                
+                lda CollidableEndAddrPtr
+                clc
+                adc #.sizeof(Collidable)
+                sta CollidableEndAddrPtr
+                bcc CarryClear 
+                    lda CollidableEndAddrPtr+1
+                    clc
+                    adc #1
+                    sta CollidableEndAddrPtr+1
+                CarryClear:
+
+                ; if collidableCounterPtr+1 > then jump ahead?
+                lda CollidableEndAddrPtr+1
+                cmp CollidableCounterPtr+1
+                bcc Finish
+                    bne JumpBackUp      ; if its not equal, assume endptr+1 > ctrptr+1 and go up
+                        ; but if equal, then check to make sure that the end address ptr is not too much greater
+                        lda CollidableEndAddrPtr
+                        cmp CollidableCounterPtr
+                        bcc Finish
+                JumpBackUp:
+                jmp Loop
+            ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+        :
+        sta (CollidableCounterPtr),y     
+        jmp IncrementCounter
+    Finish:
+
+
+    ; lda #<COLLIDABLES_ADDR          ; low byte
+    ; sta CollidableCounterPtr
+
+    ; lda #>COLLIDABLES_ADDR          ; hi byte
+    ; sta CollidableCounterPtr+1
+
+
+    pla
+    tay
+
+    rts
 .endproc
+
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Subroutine to loop all enemy actors checking for collision with missile
+;; Params = ParamXPos, ParamYPos (are the X and Y position of the missile)
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+.proc CheckCollidableCollision
+
+  tya
+  pha
+
+  lda #<COLLIDABLES_ADDR          ; low byte
+  sta CollidableCounterPtr
+
+  lda #>COLLIDABLES_ADDR          ; hi byte
+  sta CollidableCounterPtr+1
+
+  CollisionLoop:
+    ldy #0
+    lda CollidableCounterPtr
+    cmp CollidableEndAddrPtr
+    bne :+
+        ; If end address and counter ptr have same lower byte address just make sure not same upper address
+        lda CollidableCounterPtr+1
+        cmp CollidableEndAddrPtr+1
+        bne :+
+            ; Else Finish moving 
+            beq FinishCollisionCheck
+    :
+        lda (CollidableCounterPtr),y    ; Load the type of the actor we are looping
+        cmp #CollidableType::COLLIDABLE            
+        bne NextCollidable                    ; If it's NOT collidable, bypass this and move check the next one
+
+          ;; LOAD BOUNDING BOX X1, Y1, X2, and Y2
+          iny
+          lda (CollidableCounterPtr),y    ; Bounding Box X1
+          sta ParamRectX1
+          
+          clc
+          adc #10                        ; Get right value of the collidable bounding box by adding 8 pixels to the right.. giving 10 for some more cushion
+          sta ParamRectX2                  ; Bounding Box X2
+
+          iny
+
+          lda (CollidableCounterPtr),y    ; Bouding Box Y1
+          sta ParamRectY1
+
+          clc
+          adc #8                           ; Get the bottom of the collidable bounding box by adding 8
+          sta ParamRectY2                  ; Bouding Box Y2
+
+          jsr DidUnderCollisionOccur     ; Proceed to test if point is inside bounding box
+
+          ; Collision is really under collision
+          lda Collision
+          beq NextCollidable                    ; If no collision, don't do anything
+            jmp FinishCollisionCheck       ; Also, if collision happened we stop looping other enemies and leave the subroutine
+
+    NextCollidable:
+        ; Increement counter if its equal to NULL because there is no Collidable here
+        lda CollidableCounterPtr
+        clc
+        adc #.sizeof(Collidable)
+        sta CollidableCounterPtr
+
+        lda #0
+        adc CollidableCounterPtr+1
+        sta CollidableCounterPtr+1
+        jmp CollisionLoop         ; Loop to check the next actor to see if it's an enemy (collidable)
+
+  FinishCollisionCheck:
+
+    lda #<COLLIDABLES_ADDR          ; low byte
+    sta CollidableCounterPtr
+
+    lda #>COLLIDABLES_ADDR          ; hi byte
+    sta CollidableCounterPtr+1
+
+
+    pla
+    tay
+
+    rts
+.endproc
+
+
+
+;;/*
+;;         end
+  ;;  [1]  [1] [1] [1] [1] [255] [] 
+  ;;  beg
+;;*/
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Subroutine to add new collidable to the array in the first empty slot found
+;; ParamXPos, ParamYPos
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+.proc AddNewCollidable
+    ldy #0                                ; Jake - I don't believe that X allows me to act as a counter and loop through.. perhaps I should use y for this
+
+    ; Loop until end address ptr to find next available spot
+    Loop:
+        lda CollidableCounterPtr
+        cmp CollidableEndAddrPtr
+        bne :+
+            lda CollidableCounterPtr+1
+            cmp CollidableEndAddrPtr+1
+            ; If theyre equal, then just put it at the end and increment the end addressPtr
+            bne :+       
+                lda CollidableEndAddrPtr
+                clc
+                adc #.sizeof(Collidable)
+                sta CollidableEndAddrPtr
+                
+                lda #0
+                adc CollidableEndAddrPtr+1
+                sta CollidableEndAddrPtr+1  
+                jmp StoreVal
+    :
+    ; Check to see if it is null
+    lda (CollidableCounterPtr),y
+    cmp #CollidableType::NULL
+    ; If equal to null, then store
+    beq StoreVal
+        ; If not store val, then increment collidablecoutner pointer
+        lda CollidableCounterPtr
+        clc 
+        adc #.sizeof(Collidable)
+        sta CollidableCounterPtr
+        lda #0
+        adc CollidableCounterPtr+1
+        sta CollidableCounterPtr+1
+        jmp Loop
+    StoreVal:
+        lda #CollidableType::COLLIDABLE         ; They should all be of type collidable
+        sta (CollidableCounterPtr),y
+        iny
+
+        lda ParamXPos                     ; Fetch parameter "collidable position X" from RAM
+        sta (CollidableCounterPtr),y
+        iny
+
+        lda ParamYPos                     ; Fetch parameter "collidable position Y" from RAM
+        sta (CollidableCounterPtr),y
+        iny 
+
+
+    Finish:
+    ; Reset the collidable counter pointer to the very beginning
+    lda #<COLLIDABLES_ADDR          ; low byte
+    sta CollidableCounterPtr
+
+    lda #>COLLIDABLES_ADDR          ; hi byte
+    sta CollidableCounterPtr+1
+
+    rts 
+.endproc
+
+
+; ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+; ;; Move collidables to the left
+; ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+; .proc MoveCollidables
+;     ldx #0
+;     ArrayLoop:
+;         cpx #CollidableType::END
+;         beq EndRoutine
+;         lda CollidablesArray+Collidable::Type,x
+;         cmp #CollidableType::NULL              ; If the collidable type of this array position is NULL        
+;         ; If not equal to NULL, then its a collidable and lets check it
+;         bne MoveCollidable
+;         IncrementCounter:
+;             ; If equal to null, lets just increment and jump up to next collidable
+;             txa
+;             clc
+;             adc #.sizeof(Collidable)               ; Otherwise, we offset to the check the next collidable in the array
+;             tax                               ; X += sizeof(collidable)
+;             jmp ArrayLoop
+;         MoveCollidable:
+;             ; Decrement position by 8 pixels since 1 XScroll = 8 pixels
+;             lda CollidablesArray+Collidable::XPos,x                                
+;             sec
+;             sbc #1
+;             ; dec CollidablesArray+Collidable::XPos,x
+;             ; Check if it rolled over from 0 and turned negative, we remove from array
+;             bcs :+
+;                 ; Its negative, so lets remove by just turning it NULL
+;                 lda #CollidableType::NULL
+;                 sta CollidablesArray+Collidable::Type,x
+;             :
+            
+;             sta CollidablesArray+Collidable::XPos,x      
+;             jmp IncrementCounter
+;     EndRoutine:
+;         rts
+; .endproc
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Determine if under collision occurred between mario and a collidable
@@ -1110,6 +1397,17 @@ Main:
     sta XScroll
     sta CurrNametable
 
+    ; For collidables
+    lda #<COLLIDABLES_ADDR          ; low byte
+    sta CollidableCounterPtr
+    
+    sta CollidableEndAddrPtr
+
+    lda #>COLLIDABLES_ADDR          ; hi byte
+    sta CollidableCounterPtr+1
+
+    sta CollidableEndAddrPtr+1
+
     InitBackGroundTiles:
         lda #GameState::TITLE
         sta CurrentGameState
@@ -1703,13 +2001,23 @@ EnableNMI:
         ; Jake Call Gravity Subroutine, pass Actor's Y Position to Param
         jsr ImplementGravity
         jsr UpdateActors
+;           lda #<COLLIDABLES_ADDR          ; low byte
+;   sta CollidableCounterPtr
+
+;   lda #>COLLIDABLES_ADDR          ; hi byte
+;   sta CollidableCounterPtr+1
+
         jsr RenderActors
 
         CheckForNewColumn:
             lda XScroll
-            cmp PrevXScroll
-            beq :+++                          ; we don't want to write if it was already done
-                and #%00000111
+            sec 
+            sbc PrevXScroll
+            cmp #8
+            ; cmp PrevXScroll       ; This change works by comparing to 8 
+
+            bcc :+++                          ; we don't want to write if it was already done
+                and #%00000111                ; 29 hex  : 0010 1001         30 hex: 0011 0000
                 bne :+++
                     ; just check if column is 0, if so then lets just go to the 9th screen
                     lda Column
@@ -1732,10 +2040,11 @@ EnableNMI:
                     sta ParamHiByte    
                     CallFuncReadRomWriteRam:
                         jsr ReadROMWriteRam
+
         :
         NewAttribsCheck:
             lda XScroll                                                                        ; 3(ZP)
-            cmp PrevXScroll
+            cmp PrevXScroll              ; 29 hex  : 0010 1001         30 hex: 0011 0000
             beq :++
                 ; Check if the scroll is a multiple of 32 (lowest 5 bits are 00000)
                 and #%00011111                                                                     ; 2(Immediate)

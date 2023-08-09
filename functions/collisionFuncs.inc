@@ -80,57 +80,7 @@
     rts
 .endproc
 
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Subroutine to loop all enemy actors checking for collision with missile
-;; Params = ParamXPos, ParamYPos (are the X and Y position of the missile)
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-.proc CheckCollidableCollision
 
-  CollisionLoop:
-  ;  lda Collision
-  ;   bne FinishCollisionCheck ; If it is not equal to 0 jump to finish collision check, means there was already a collision on this loop
-      cpx #MAX_COLLIDABLES * .sizeof(Collidable)   ; We loop all entities, looking for enemies (airplanes)
-      beq FinishCollisionCheck
-        lda CollidablesArray+Collidable::Type,x    ; Load the type of the actor we are looping
-        cmp #CollidableType::COLLIDABLE            
-        bne NextCollidable                    ; If it's NOT collidable, bypass this and move check the next one
-
-        ;; LOAD BOUNDING BOX X1, Y1, X2, and Y2
-        lda CollidablesArray+Collidable::XPos,x    ; Bounding Box X1
-        sta ParamRectX1
-        lda CollidablesArray+Collidable::YPos,x    ; Bouding Box Y1
-        sta ParamRectY1
-
-        lda CollidablesArray+Collidable::XPos,x
-        clc
-        adc #10                        ; Get right value of the collidable bounding box by adding 8 pixels to the right.. giving 10 for some more cushion
-        sta ParamRectX2                  ; Bounding Box X2
-
-        lda CollidablesArray+Collidable::YPos,x
-        clc
-        adc #8                           ; Get the bottom of the collidable bounding box by adding 8
-        sta ParamRectY2                  ; Bouding Box Y2
-
-        jsr DidUnderCollisionOccur     ; Proceed to test if point is inside bounding box
-
-        ; Collision is really under collision
-        lda Collision
-        beq NextCollidable                    ; If no collision, don't do anything
-
-
-          jmp FinishCollisionCheck       ; Also, if collision happened we stop looping other enemies and leave the subroutine
-
-    NextCollidable:
-        txa
-        clc
-        adc #.sizeof(Collidable)              ; X += sizeof(Actor)
-        tax
-        jmp CollisionLoop         ; Loop to check the next actor to see if it's an enemy (collidable)
-
-  FinishCollisionCheck:
-
-    rts
-.endproc
 
 
 
@@ -139,31 +89,48 @@
 ;; Subroutine to add new collidable to the array in the first empty slot found
 ;; ParamXPos, ParamYPos
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-.proc AddNewCollidable
-    ldx #0                            ; X = 0
-  ArrayLoop:
-    cpx #MAX_COLLIDABLES * .sizeof(Collidable)  ; Reached maximum number of collidables allowed in the array?
-    beq EndRoutine                    ; Then we skip and don't add a new actor
-    lda CollidablesArray+Collidable::Type,x
-    cmp #CollidableType::NULL              ; If the collidable type of this array position is NULL
-    beq AddNewCollidableToArray            ;   Then: we found an empty slot, proceed to add collidable to position [x]
-   NextCollidable:
-    txa
-    clc
-    adc #.sizeof(Collidable)               ; Otherwise, we offset to the check the next collidable in the array
-    tax                               ; X += sizeof(collidable)
-    jmp ArrayLoop
+; .proc AddNewCollidable
+;     ldx CollidableEndAddr,X                            ; X = 0     ; Dereference end addres to see if its the end
+;   ArrayLoop:
+;     cpx #CollidableType::END          ; Reached maximum number of collidables allowed in the array?
+;     beq EndRoutine                    ; Then we skip and don't add a new actor
+;     lda CollidablesArray+Collidable::Type,x
+;     cmp #CollidableType::NULL              ; If the collidable type of this array position is NULL
+;     beq AddNewCollidableToArray            ;   Then: we found an empty slot, proceed to add collidable to position [x]
+;    NextCollidable:
+;     txa
+;     clc
+;     adc #.sizeof(Collidable)               ; Otherwise, we offset to the check the next collidable in the array
+;     tax                               ; X += sizeof(collidable)
+;     jmp ArrayLoop
 
-  AddNewCollidableToArray:                 ; Here we add a new collidable at index [x] of the array
-    lda #CollidableType::COLLIDABLE         ; They should all be of type collidable
-    sta CollidablesArray+Collidable::Type,x
-    lda ParamXPos                     ; Fetch parameter "collidable position X" from RAM
-    sta CollidablesArray+Collidable::XPos,x
-    lda ParamYPos                     ; Fetch parameter "collidable position Y" from RAM
-    sta CollidablesArray+Collidable::YPos,x
-EndRoutine:
-    rts
-.endproc
+;   AddNewCollidableToArray:                 ; Here we add a new collidable at index [x] of the array
+;     lda #CollidableType::COLLIDABLE         ; They should all be of type collidable
+;     sta CollidablesArray+Collidable::Type,x
+;     lda ParamXPos                     ; Fetch parameter "collidable position X" from RAM
+;     sta CollidablesArray+Collidable::XPos,x
+;     lda ParamYPos                     ; Fetch parameter "collidable position Y" from RAM
+;     sta CollidablesArray+Collidable::YPos,x
+
+
+;     ; There will be cases in the middle that get cleared out before so not great solution but I can increment it by size
+;     lda #.sizeof
+;     clc 
+;     adc CollidableEndAddr
+;     sta CollidableEndAddr
+
+;     lda #0
+;     sta CollidableEndAddr+1;
+
+;     lda #255
+;     ldx #0
+;     sta CollidableEndAddr,X
+
+
+
+; EndRoutine:
+;     rts
+; .endproc
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Subroutine to check tile and add it to the collidables array - TODO: Clean up!
@@ -234,7 +201,15 @@ EndRoutine:
           lda #247
           :
           sta ParamXPos
+
+          ; Push Y onto stack
+          tya
+          pha 
+
           jsr AddNewCollidable
+
+          pla
+          tay
 
         pla
         tax
